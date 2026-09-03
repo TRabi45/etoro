@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { CompanyListItem } from "@/src/db/repositories/companies";
 import type { EnablingLayer, StrategicTheme } from "@/src/config/taxonomy";
 
@@ -40,9 +41,16 @@ export function CompanyList({ companies }: { companies: CompanyListItem[] }) {
   return (
     <ul className="grid gap-3 sm:grid-cols-2">
       {companies.map((company) => (
-        <li key={company.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <li
+          key={company.id}
+          className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow"
+        >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-base font-semibold text-slate-900">{company.canonicalName}</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              <Link href={`/companies/${company.slug}`} className="hover:underline">
+                {company.canonicalName}
+              </Link>
+            </h3>
             {company.primaryDomain ? (
               <span className="font-mono text-xs text-slate-500">{company.primaryDomain}</span>
             ) : null}
@@ -70,7 +78,13 @@ export function CompanyList({ companies }: { companies: CompanyListItem[] }) {
             <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium text-amber-700">
               Bootstrap identity — research pending
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium">
+              <Link href={`/companies/${company.slug}`} className="text-blue-700 hover:underline">
+                View evidence-backed profile →
+              </Link>
+            </p>
+          )}
         </li>
       ))}
     </ul>
