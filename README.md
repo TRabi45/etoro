@@ -6,11 +6,13 @@ builds evidence-backed company profiles, scores them with deterministic and
 versioned logic, and explains its reasoning conversationally with citations,
 unknowns and a counter-thesis.
 
-> **Current state: Build Milestone 1 of 6.** This repository contains the
-> repository and database foundation only. It holds identity-only bootstrap
-> records for six companies and **is not yet a working research agent** - there
-> is no web retrieval, no claim extraction, no LLM call, no chat and no scored
-> target in the database. See [Milestone status](#milestone-status).
+> **Current state: Build Milestone 2 of 6.** The evidence-backed vertical slice
+> works end to end: sources, claims, linked evidence, fundamentals, a strategic
+> assessment and a deterministic score for one company, rendered as a profile
+> where every material statement carries a citation. It is **not yet a working
+> research agent** - there is no web retrieval, no LLM call and no chat, so the
+> pipeline is currently fed a clearly-labelled synthetic stub payload. See
+> [Milestone status](#milestone-status).
 
 ## Why the product is shaped this way
 
@@ -44,9 +46,12 @@ multi-agent orchestration, no vector database.
 | Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                          |
 | Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                |
 | Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.              |
+| Pipeline               | `src/pipeline/`                  | Extraction-payload contract and the orchestration that writes the evidence tree.        |
 | Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.         |
+| Stub payload           | `data/stub/`                     | Synthetic stand-in for LLM extraction until Milestone 3. Clearly labelled as such.      |
 | Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                               |
 | Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                             |
+| Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                           |
 | Gold benchmark         | `tests/evaluation/gold/`         | Evaluation fixtures. Production modules cannot import these.                            |
 
 ### Enforced boundaries
@@ -110,6 +115,8 @@ hard-coded value.
 | `pnpm db:seed`                      | Seed the bootstrap identities (idempotent)                             |
 | `pnpm db:types`                     | Regenerate `src/db/types.generated.ts` from the running local database |
 | `pnpm db:verify`                    | Integration checks against a live local database (needs Docker)        |
+| `pnpm slice:run`                    | Run the evidence-backed vertical slice for one bootstrap company       |
+| `pnpm test:integration`             | Integration tests against a live local database (needs Docker)         |
 
 ### Database workflow
 
@@ -181,30 +188,51 @@ final_score         = max(0, positive_normalized - risk_penalty - evidence_penal
 - A database-backed dashboard shell with loading, empty, configuration-error and
   database-error states
 
+**Delivered in Milestone 2**
+
+- Repository functions for the whole evidence tree - sources, claims,
+  `claim_sources`, metrics, fundamentals, assessments, scores, scoring models and
+  agent runs - plus a composite `getCompanyProfileWithEvidence(slug)`
+- `assessment_claims` and `fundamental_analysis_claims`, so a rendered conclusion
+  can be traced back through claims to sources
+- A strictly typed `EvidencePacket` (facts, contradictions, unknowns, freshness)
+  enforced at the repository boundary; a claim cannot be written without a source
+- `src/pipeline/` - the real orchestration logic, plus an `ExtractionPayload`
+  contract the Milestone 3 LLM adapter will have to satisfy
+- `pnpm slice:run` - writes the full evidence tree for one bootstrap company and
+  runs the deterministic engine over the recorded inputs
+- `/companies/[slug]` - fundamentals, assessment, score breakdown and a sources
+  footer, with inline `[1]`-style citations on every material statement
+- An integration suite (`pnpm test:integration`) proving against a live database
+  that a contradictory claim never overwrites the original
+
 **Not implemented yet, by design**
 
 - Web search, RSS, crawling or source fetching
-- Claim extraction, AI-generated profiles, or any LLM provider call
+- Claim extraction and any LLM provider call - the pipeline is fed a stub payload
 - Chat and conversation memory
 - Scheduled monitoring
-- Target recommendations, comparison, market map or watchlist UX
+- Comparison, market map or watchlist UX
 - Deployment to Vercel or a hosted Supabase project
 
 ## Limitations
 
-- The dashboard shows identity only. Every company is labelled
-  `Bootstrap identity — research pending`, because that is exactly what it is.
-- The database schema supports evidence, claims, events, assessments and scores,
-  but no pipeline writes them yet, so those tables are empty.
-- The scoring engine is complete and tested, but nothing calls it in production
-  yet: there are no validated inputs to score until the pipeline exists.
+- **The profile data is synthetic.** `pnpm slice:run` writes a hardcoded stub
+  payload with `example.com` sources, and the page says so in a provenance
+  notice. The evidence structure, citations and scoring are real; the underlying
+  facts are invented, deliberately, so stage-two research is never passed off as
+  agent discovery. Live retrieval arrives in Milestone 4.
+- Only one company has a profile. The other five remain identity-only.
 - The gold benchmark contains expectations for eight companies and is not yet
   executed; the evaluation runner arrives in Milestone 6.
+- `pnpm slice:run` is append-only for claims (an observation is made at a point
+  in time), so re-running it adds a second set. Reset with `pnpm db:reset &&
+pnpm db:seed` for a clean slice. The score itself is keyed on its input hash
+  and will not duplicate.
 
 ## Next milestone boundary
 
-**Milestone 2 - evidence-backed company vertical slice.** One company taken from
-source retrieval through stored sources and claims, a cited profile, a
-deterministic score computed from validated inputs, and rendered citations - with
-the independent gold profile used to evaluate that output rather than to produce
-it.
+**Milestone 3 - agent tools and contextual chat.** Typed retrieval and comparison
+tools, the Claude provider adapter behind a replaceable interface, versioned
+prompts, streaming grounded responses, bounded session memory, and citation
+checks on generated answers.

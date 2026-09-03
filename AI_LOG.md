@@ -378,6 +378,68 @@ Build Milestone 2 — the evidence-backed company vertical slice: one company ta
 
 ---
 
+## Milestone 11 — Claude Code Build Milestone 2: Evidence-Backed Company Vertical Slice
+
+### AI and tools used
+
+Claude Code again (this session ran on Claude Opus 5, after Milestone 1 ran mostly on Claude Sonnet 5), following `CLAUDE_CODE_BUILD_MILESTONE_2.md` and the standing rules in `CLAUDE.md`. No LLM provider is wired into the product itself yet — that is Milestone 3 — so this milestone deliberately built the pipeline around a stubbed extraction payload.
+
+### How evidence traceability was structured
+
+The requirement driving the whole milestone was that every material fact, metric and assessment conclusion on screen must be traceable to a source. Milestone 1 could not satisfy that: it gave every runtime row `agent_run_id` provenance and gave metrics a `claim_id`, but there was no way to say which evidence a _conclusion_ rested on. A rendered sentence like "integration risk is manageable" had nothing behind it.
+
+The fix was one small migration adding two join tables, `assessment_claims` and `fundamental_analysis_claims`, rather than embedding claim ids in a jsonb blob where nothing would enforce that the referenced claims exist. The chain the UI now walks is:
+
+```
+assessment -> assessment_claims -> claims -> claim_sources -> sources
+```
+
+Citation numbering happens in a pure function (`mapCompanyProfile`), which assigns `[1]`, `[2]` by first appearance and returns them per fact, per metric, per fundamentals field and per assessment role. Because it is pure, the logic most likely to be quietly wrong — a citation pointing at the wrong source, a contradiction collapsing into one figure, an unknown vanishing — is unit-tested against hand-built rows with no database in the loop.
+
+Two rules are enforced structurally rather than by convention: `insertClaim` refuses to write a claim with no source and rolls the claim back if linking fails, so an unsourced fact cannot exist; and the evidence packet excludes `analysis` from its facts list entirely, keeping the system's own judgement separate from sourced evidence.
+
+### Schema and type adjustments required
+
+- **The two join tables above.** Anticipated by the architecture ("an assessment references claims through its evidence packet") but not built in Milestone 1.
+- **`toJson` helper.** Typed domain objects would not assign to the generated `Json` column type, because an interface has no index signature. Rather than casting, a small helper does a JSON round trip — which also strips `undefined` exactly as the wire would, so what is typed as `Json` is genuinely what gets stored.
+- **Shared canonicalisation.** `canonicalJson` was extracted into `src/domain/canonical-json.ts` because a second caller appeared: `ensureScoringModel` compares stored configuration against the configuration in code, and jsonb round trips reorder keys freely. Duplicating that sorting in two correctness-critical places would have been the wrong trade.
+- **`isResearchPending` is now derived.** It previously read the company row's own lifecycle flag, but a bootstrap row keeps `record_origin = bootstrap_identity` for life, so the list would have gone on claiming "research pending" after research existed. It now reflects whether an assessment actually exists.
+
+### How the scoring engine was integrated
+
+The pipeline calls the Milestone 1 engine as a pure function and persists what it returns. Ordering is deliberate: the score is computed _first_, before any write, so a payload that cannot be scored writes nothing at all. The fundamentals row then stores the coverage the engine actually calculated rather than a separately-supplied number, so the fundamentals section and the score can never disagree about how well evidenced a company is.
+
+`ensureScoringModel` publishes the v0.2 configuration on first use and thereafter refuses to reconcile a difference: if the stored row and the code have drifted, every score already calculated under that version would silently stop being reproducible, so it fails loudly and tells the operator to publish a new version.
+
+### A deliberate decision about the stub data
+
+The milestone asked for a hardcoded mock payload. I made it unmistakably synthetic — `example.com` URLs, publishers labelled `(STUB SOURCE)`, every statement prefixed `STUB:` — for two reasons. First, the project's stage-two research already contains real sourced findings about these companies, and copying those figures into the runtime database would present human research as agent discovery, which is exactly the confusion the three-layer data model exists to prevent. Second, fabricated-but-realistic numbers about a real company carrying real-looking citations is the worst artefact to leave in a database: if it reaches a screenshot or a demo, nothing marks it as fiction. The profile page also carries a visible provenance notice. What is real here is the _shape_ — claim kinds, source relations, the contradiction, the recorded unknowns — which is what the live extractor will have to produce.
+
+The stub scores 73.78 with 93% coverage and returns **Partner**, not Acquire, because acquisition plausibility is `unknown`, the regulatory perimeter is unresolved, and partnership beats control on the recorded route assessment. That was chosen on purpose: it exercises the separation of score from action rather than producing a flattering number.
+
+### Failures and defects found
+
+Four, each caught by running something rather than by reading code:
+
+1. **Four type errors** at the database boundary (`Record<string, unknown>` not assignable to `Json`, and an interface that could not be cast to the canonical type). Fixed properly with the `toJson` helper and by typing the shape as `CanonicalObject`, not by casting to `any`.
+2. **An empty-interface lint error** (`SourceListEntry extends PacketCitation {}`), fixed by making it a type alias.
+3. **The wrong loading skeleton on the profile route.** `app/(dashboard)/loading.tsx` applies to the whole route group, so opening a company profile briefly rendered a _"Monitored companies"_ list skeleton — describing a page the reader was not going to get. Only visible by loading the page in a browser and inspecting the DOM. Fixed with a profile-shaped `loading.tsx` for that segment.
+4. **The same data gap printed three times.** "Open questions and data gaps" listed the missing revenue figure once from the claim, once from the derived metric, and once from the fundamentals — plus the fundamentals section repeated its own subset above. Fixed in two places: the mapper now suppresses a metric-derived unknown when its own claim already reported the gap in more specific words (with a test that this does not swallow a gap nothing else covers), and the fundamentals section defers to the single aggregated list.
+
+### Verification
+
+All six gate checks were run to completion: `format:check`, `lint`, `typecheck`, `test` (106 passing, up from 84), `test:integration` (4 passing, against a live database), and `build` — which confirms `/companies/[slug]` compiles as a dynamic route and that the production build still succeeds without database credentials.
+
+The pipeline was verified from a genuinely clean slate: `supabase db reset` applied both migrations to a fresh database, the bootstrap seed ran, and `pnpm slice:run` reproduced identical numbers. The profile page was then loaded in a real browser and checked programmatically rather than by eye — 17 inline citations, 3 source anchors, and **zero broken citation links**, with the score table showing weights summing to 100 and the unknown dimension rendering as "—" rather than a zero.
+
+The new integration test proves the contradiction rule against the real database rather than by inspection: two claims disagreeing on the same predicate both survive, each keeping its own sources, and the database rejects both an unsourced claim and analysis marked as verified.
+
+### Next bounded milestone
+
+Build Milestone 3 — agent tools and contextual chat: typed retrieval and comparison tools, the Claude provider adapter behind a replaceable interface, versioned prompts, streaming grounded responses, bounded session memory, and citation checks on generated answers.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
