@@ -59,6 +59,45 @@ export type Database = {
           },
         ]
       }
+      assessment_claims: {
+        Row: {
+          assessment_id: string
+          claim_id: string
+          created_at: string
+          id: string
+          role: string
+        }
+        Insert: {
+          assessment_id: string
+          claim_id: string
+          created_at?: string
+          id?: string
+          role: string
+        }
+        Update: {
+          assessment_id?: string
+          claim_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_claims_assessment_id_fkey"
+            columns: ["assessment_id"]
+            isOneToOne: false
+            referencedRelation: "assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_claims_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "claims"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assessments: {
         Row: {
           agent_run_id: string
@@ -857,6 +896,45 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fundamental_analysis_claims: {
+        Row: {
+          claim_id: string
+          created_at: string
+          field: string
+          fundamental_analysis_id: string
+          id: string
+        }
+        Insert: {
+          claim_id: string
+          created_at?: string
+          field: string
+          fundamental_analysis_id: string
+          id?: string
+        }
+        Update: {
+          claim_id?: string
+          created_at?: string
+          field?: string
+          fundamental_analysis_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fundamental_analysis_claims_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "claims"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fundamental_analysis_claims_fundamental_analysis_id_fkey"
+            columns: ["fundamental_analysis_id"]
+            isOneToOne: false
+            referencedRelation: "fundamental_analyses"
             referencedColumns: ["id"]
           },
         ]
