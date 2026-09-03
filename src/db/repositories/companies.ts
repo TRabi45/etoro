@@ -1,4 +1,5 @@
-import { createPublicClient, type ConfigurationProblem } from "@/src/db/client";
+import { createPublicClient } from "@/src/db/client";
+import type { RepositoryResult } from "@/src/db/repositories/result";
 import type { EnablingLayer, RecordOrigin, StrategicTheme } from "@/src/config/taxonomy";
 
 /**
@@ -25,27 +26,24 @@ export interface CompanyListItem {
   enablingLayers: EnablingLayer[];
   recordOrigin: RecordOrigin;
   /**
-   * True when this row is seed identity with no research attached yet. The UI
-   * uses it to label the row honestly instead of implying a profile exists.
+   * True when this row is still identity with nothing researched behind it.
+   *
+   * Derived from whether the pipeline has actually written an assessment, not
+   * from the row's own lifecycle flag: a bootstrap row keeps `record_origin =
+   * bootstrap_identity` for life, because that is how it was created, so the
+   * flag alone would keep claiming "research pending" long after research
+   * existed.
    */
   isResearchPending: boolean;
   updatedAt: string;
 }
 
-export interface DatabaseProblem {
-  kind: "database";
-  message: string;
-}
-
-export type RepositoryResult<T> =
-  { ok: true; data: T } | { ok: false; problem: ConfigurationProblem | DatabaseProblem };
-
 /**
  * Lists companies for the dashboard.
  *
- * Only identity-level columns are selected. There is no score, assessment or
- * profile to read yet, and selecting columns that do not exist in the current
- * milestone would hide that fact.
+ * Selects identity columns plus a marker for whether an assessment exists, so
+ * the list can distinguish a seeded identity from a researched company without
+ * loading either profile.
  */
 export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[]>> {
   const connection = createPublicClient();
@@ -56,7 +54,7 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
   const { data, error } = await connection.client
     .from("companies")
     .select(
-      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at",
+      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at, assessments(id)",
     )
     .order("canonical_name", { ascending: true });
 
@@ -79,8 +77,7 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
       themeTags: row.theme_tags ?? [],
       enablingLayers: row.enabling_layers ?? [],
       recordOrigin: row.record_origin,
-      isResearchPending:
-        row.record_origin === "bootstrap_identity" && row.lifecycle_status === "research_pending",
+      isResearchPending: (row.assessments ?? []).length === 0,
       updatedAt: row.updated_at,
     })),
   };
