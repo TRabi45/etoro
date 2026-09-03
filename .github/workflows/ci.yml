@@ -16,9 +16,13 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
+      # Must stay >= 22.13: pnpm 11 uses the node:sqlite built-in module, which
+      # does not exist in Node 20, so the runner would fail before installing
+      # anything. 24 also matches the version used for local development, which
+      # keeps CI from diverging from what is actually tested by hand.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       # --frozen-lockfile fails if the lockfile and package.json disagree, so a

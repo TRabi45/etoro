@@ -68,7 +68,8 @@ multi-agent orchestration, no vector database.
 
 ## Prerequisites
 
-- Node.js 20.9 or newer
+- Node.js 22.13 or newer (pnpm 11 requires it - it uses the `node:sqlite`
+  built-in, which Node 20 does not have)
 - pnpm 11 (`npm install -g pnpm`)
 - Docker Desktop, for the local Supabase stack
 
