@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+  canonicalize,
+  type CanonicalObject,
+  type CanonicalValue,
+} from "@/src/domain/canonical-json";
 import type { ScoringInput } from "@/src/domain/scoring/types";
 
 /**
@@ -19,26 +24,6 @@ import type { ScoringInput } from "@/src/domain/scoring/types";
  * state does, so it must. Object key order is normalised, so two payloads that
  * differ only in how they were assembled hash identically.
  */
-
-type CanonicalValue = string | number | boolean | null | CanonicalValue[] | CanonicalObject;
-interface CanonicalObject {
-  [key: string]: CanonicalValue;
-}
-
-/** Recursively sorts object keys so serialisation is order-independent. */
-function canonicalize(value: CanonicalValue): CanonicalValue {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (value !== null && typeof value === "object") {
-    const sorted: CanonicalObject = {};
-    for (const key of Object.keys(value).sort()) {
-      sorted[key] = canonicalize(value[key]);
-    }
-    return sorted;
-  }
-  return value;
-}
 
 /** Strips explanatory text, keeping only what the calculation depends on. */
 export function buildCanonicalScoringPayload(input: ScoringInput): CanonicalObject {
@@ -61,7 +46,7 @@ export function buildCanonicalScoringPayload(input: ScoringInput): CanonicalObje
     hardGates[key] = { state: input.hardGates[key].state };
   }
 
-  return canonicalize({
+  const payload: CanonicalValue = {
     path: input.path,
     subtype: input.subtype ?? null,
     dimensions,
@@ -80,7 +65,9 @@ export function buildCanonicalScoringPayload(input: ScoringInput): CanonicalObje
       invest: input.routeAssessment.invest.score,
       monitor: input.routeAssessment.monitor.score,
     },
-  }) as CanonicalObject;
+  };
+
+  return canonicalize(payload) as CanonicalObject;
 }
 
 /** SHA-256 of the canonical payload, hex encoded. */
