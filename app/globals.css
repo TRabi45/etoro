@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/*
+ * The dashboard is deliberately light-only for this milestone: every
+ * component below uses hard-coded light-mode Tailwind colors (bg-white
+ * cards, slate-900 text), so following the OS dark-mode preference here -
+ * which create-next-app's template does by default - would swap the page
+ * background to near-black while the text stayed near-black too. A real
+ * dark theme is a design task for a later milestone, not a one-line toggle.
+ */
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

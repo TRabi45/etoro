@@ -1,0 +1,7 @@
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
+  # Vitest's bundler and the Supabase CLI both need their postinstall step to
+  # place a platform binary; without this they fail at run time, not install time.
+  esbuild: true
+  supabase: true

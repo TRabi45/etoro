@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+build
+pnpm-lock.yaml
+src/db/types.generated.ts
+supabase/.temp
+supabase/.branches
+
+# Provided verbatim by the project owner; not reformatted.
+CLAUDE.md
