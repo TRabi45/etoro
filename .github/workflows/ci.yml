@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# CI runs with no secrets and no database. Everything below has to pass on a
+# clean checkout, which is why the unit suite is pure and the one check that
+# needs Docker lives in `pnpm db:verify` instead.
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # --frozen-lockfile fails if the lockfile and package.json disagree, so a
+      # dependency change cannot reach main without the lockfile that proves it
+      # installs.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      # The dashboard renders at request time, so the production build must
+      # succeed without database credentials.
+      - name: Production build
+        run: pnpm build
