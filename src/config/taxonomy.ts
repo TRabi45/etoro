@@ -217,6 +217,9 @@ export const EVENT_TYPES = [
   "other",
 ] as const;
 
+/** How consequential an event is, used to rank what an analyst sees first. */
+export const MATERIALITY_LEVELS = ["low", "medium", "high"] as const;
+
 export const RECOMMENDATION_STATES = [
   "acquire",
   "invest",
@@ -265,6 +268,7 @@ export type DealStatus = (typeof DEAL_STATUSES)[number];
 export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
 export type FundamentalArchetype = (typeof FUNDAMENTAL_ARCHETYPES)[number];
 export type EventType = (typeof EVENT_TYPES)[number];
+export type MaterialityLevel = (typeof MATERIALITY_LEVELS)[number];
 export type RecommendationState = (typeof RECOMMENDATION_STATES)[number];
 export type AlternativeRoute = (typeof ALTERNATIVE_ROUTES)[number];
 export type RecordOrigin = (typeof RECORD_ORIGINS)[number];
