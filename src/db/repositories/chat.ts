@@ -25,56 +25,101 @@ export interface StoredChatMessage {
   createdAt: string;
 }
 
+export interface EnsureChatSessionArgs {
+  /** The conversation the client claims to be continuing, if any. */
+  sessionId: string | null;
+  /** The ownership secret this browser presented, if it has one yet. */
+  ownerToken: string | null;
+  currentCompanyId: string | null;
+}
+
+export type EnsureChatSessionResult =
+  | { ok: true; sessionId: string; ownerToken: string }
+  /** The session exists and belongs to a different browser. */
+  | { ok: false; reason: "owned_by_another_client" };
+
+/** Long enough that guessing is not a strategy; the schema enforces the floor. */
+function mintOwnerToken(): string {
+  return `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+}
+
 /**
- * Returns the existing session, or creates one.
+ * Returns the caller's session, creating it if this is the first turn.
  *
- * When the caller supplies an id that does not exist yet, the row is created
- * *with that id*. The client mints the id once per conversation, so honouring it
- * is what keeps every turn of a conversation under a single session row instead
- * of scattering the transcript across one row per message.
+ * Two properties matter here and neither is obvious from the happy path.
+ *
+ * **It is race-free.** The previous version read the row and then inserted if it
+ * was absent, so two requests arriving together for a new conversation both saw
+ * nothing and both inserted, and the loser got a duplicate-key error surfaced to
+ * the user as a failed question. Writing first with `ignoreDuplicates` and
+ * reading afterwards collapses that: exactly one insert wins, the other is a
+ * no-op, and both requests then read the same committed row.
+ *
+ * **It enforces ownership.** Session ids travel in the request body, so without
+ * a check any caller could append turns to someone else's conversation - and
+ * because history is now rebuilt on the server, injected turns would be replayed
+ * to the model on the victim's next question. The first request to create a
+ * session claims it with a server-minted token held in an HttpOnly cookie; later
+ * requests must present the same token.
+ *
+ * Rows created before the owner column existed carry no token. They are claimed
+ * by the next caller rather than being rejected, which keeps old conversations
+ * usable without pretending they were verified.
  */
 export async function ensureChatSession(
   client: TypedSupabaseClient,
-  sessionId: string | null,
-  currentCompanyId: string | null,
-): Promise<string> {
-  if (sessionId) {
-    const existing = await client
-      .from("chat_sessions")
-      .select("id")
-      .eq("id", sessionId)
-      .maybeSingle();
+  { sessionId, ownerToken, currentCompanyId }: EnsureChatSessionArgs,
+): Promise<EnsureChatSessionResult> {
+  const id = sessionId ?? crypto.randomUUID();
+  const presentedToken = ownerToken ?? mintOwnerToken();
 
-    if (existing.error) {
-      throw new RepositoryWriteError(`could not read chat session: ${existing.error.message}`);
-    }
-    if (existing.data) {
-      // Keep the page context current: the user may have navigated since the
-      // session started.
-      await client
-        .from("chat_sessions")
-        .update({ current_company_id: currentCompanyId })
-        .eq("id", sessionId);
-      return existing.data.id;
-    }
+  // Write first, read second. If the row already exists this is a no-op, which
+  // is what makes concurrent first turns safe.
+  const inserted = await client.from("chat_sessions").upsert(
+    { id, owner_token: presentedToken, current_company_id: currentCompanyId },
+    {
+      onConflict: "id",
+      ignoreDuplicates: true,
+    },
+  );
+
+  if (inserted.error) {
+    throw new RepositoryWriteError(`could not create chat session: ${inserted.error.message}`);
   }
 
-  const { data, error } = await client
+  const existing = await client
     .from("chat_sessions")
-    .insert(
-      sessionId
-        ? { id: sessionId, current_company_id: currentCompanyId }
-        : { current_company_id: currentCompanyId },
-    )
-    .select("id")
-    .single();
+    .select("id, owner_token")
+    .eq("id", id)
+    .maybeSingle();
 
-  if (error || !data) {
-    throw new RepositoryWriteError(
-      `could not create chat session: ${error?.message ?? "no row returned"}`,
-    );
+  if (existing.error) {
+    throw new RepositoryWriteError(`could not read chat session: ${existing.error.message}`);
   }
-  return data.id;
+  if (!existing.data) {
+    throw new RepositoryWriteError("chat session disappeared immediately after it was written");
+  }
+
+  const storedToken = existing.data.owner_token;
+  if (storedToken !== null && storedToken !== presentedToken) {
+    return { ok: false, reason: "owned_by_another_client" };
+  }
+
+  // Claim a legacy row, and keep the page context current: the user may have
+  // navigated to a different company since the session started.
+  const update = await client
+    .from("chat_sessions")
+    .update({ owner_token: presentedToken, current_company_id: currentCompanyId })
+    .eq("id", id);
+
+  if (update.error) {
+    // Not fatal to the answer, but it is a real inconsistency rather than
+    // something to swallow: the stored context would silently stop matching the
+    // page the analyst is on.
+    throw new RepositoryWriteError(`could not update chat session: ${update.error.message}`);
+  }
+
+  return { ok: true, sessionId: id, ownerToken: presentedToken };
 }
 
 export async function appendChatMessage(

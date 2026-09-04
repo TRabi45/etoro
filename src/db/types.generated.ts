@@ -207,18 +207,21 @@ export type Database = {
           created_at: string
           current_company_id: string | null
           id: string
+          owner_token: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           current_company_id?: string | null
           id?: string
+          owner_token?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           current_company_id?: string | null
           id?: string
+          owner_token?: string | null
           updated_at?: string
         }
         Relationships: [

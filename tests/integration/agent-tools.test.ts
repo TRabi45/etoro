@@ -232,7 +232,15 @@ describe("conversation memory", () => {
     }
     const client = connection.client;
 
-    const sessionId = await ensureChatSession(client, null, null);
+    const created = await ensureChatSession(client, {
+      sessionId: null,
+      ownerToken: null,
+      currentCompanyId: null,
+    });
+    if (!created.ok) {
+      throw new Error("a brand new session should never be owned by someone else");
+    }
+    const sessionId = created.sessionId;
     expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
 
     // Twelve turns, so the ten-message bound actually has something to trim.
@@ -250,10 +258,66 @@ describe("conversation memory", () => {
     expect(history[0].content).toBe("message 2");
     expect(history[history.length - 1].content).toBe("message 11");
 
-    const reused = await ensureChatSession(client, sessionId, null);
-    expect(reused).toBe(sessionId);
+    const reused = await ensureChatSession(client, {
+      sessionId,
+      ownerToken: created.ownerToken,
+      currentCompanyId: null,
+    });
+    expect(reused).toEqual({ ok: true, sessionId, ownerToken: created.ownerToken });
 
     await client.from("chat_messages").delete().eq("session_id", sessionId);
+    await client.from("chat_sessions").delete().eq("id", sessionId);
+  });
+
+  it("refuses to continue a session that belongs to a different browser", async () => {
+    const connection = createServiceClient();
+    if (!connection.ok) {
+      throw new Error(connection.problem.message);
+    }
+    const client = connection.client;
+
+    const owner = await ensureChatSession(client, {
+      sessionId: null,
+      ownerToken: null,
+      currentCompanyId: null,
+    });
+    if (!owner.ok) {
+      throw new Error("a brand new session should never be owned by someone else");
+    }
+
+    // A second client presenting the same session id but its own token. Session
+    // ids travel in the request body, so this is exactly what an attacker who
+    // observed one would send - and because history is now replayed to the
+    // model, being allowed in would mean writing into what the owner is told.
+    const intruder = await ensureChatSession(client, {
+      sessionId: owner.sessionId,
+      ownerToken: "0123456789abcdef0123456789abcdef0123456789abcdef",
+      currentCompanyId: null,
+    });
+    expect(intruder).toEqual({ ok: false, reason: "owned_by_another_client" });
+
+    await client.from("chat_sessions").delete().eq("id", owner.sessionId);
+  });
+
+  it("survives two concurrent first turns for the same new session", async () => {
+    const connection = createServiceClient();
+    if (!connection.ok) {
+      throw new Error(connection.problem.message);
+    }
+    const client = connection.client;
+
+    // The race the previous check-then-insert version lost: both requests saw no
+    // row and both inserted, and the loser's question died on a duplicate key.
+    const sessionId = crypto.randomUUID();
+    const token = "fedcba9876543210fedcba9876543210fedcba9876543210";
+    const [first, second] = await Promise.all([
+      ensureChatSession(client, { sessionId, ownerToken: token, currentCompanyId: null }),
+      ensureChatSession(client, { sessionId, ownerToken: token, currentCompanyId: null }),
+    ]);
+
+    expect(first).toEqual({ ok: true, sessionId, ownerToken: token });
+    expect(second).toEqual({ ok: true, sessionId, ownerToken: token });
+
     await client.from("chat_sessions").delete().eq("id", sessionId);
   });
 });
