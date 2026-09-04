@@ -24,10 +24,14 @@
     "db:types": "supabase gen types typescript --local --schema public > src/db/types.generated.ts",
     "db:verify": "tsx scripts/verify-db.ts",
     "slice:run": "tsx scripts/run_vertical_slice.ts",
+    "agent:ask": "tsx scripts/ask-agent.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.48",
+    "@ai-sdk/react": "^4.0.93",
     "@supabase/supabase-js": "2.113.0",
+    "ai": "^7.0.90",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
