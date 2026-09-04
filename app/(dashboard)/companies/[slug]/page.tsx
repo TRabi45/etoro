@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import { AssessmentSection } from "@/components/company/assessment-section";
 import { FundamentalsSection } from "@/components/company/fundamentals-section";
 import { ScoreBreakdown } from "@/components/company/score-breakdown";
@@ -164,6 +165,10 @@ export default async function CompanyProfilePage({ params }: PageProps<"/compani
           <SourcesFooter sources={profile.sources} />
         </>
       )}
+
+      {/* The page context lets the agent resolve "their score" or "compare them
+          to Dfns" without the user having to name this company again. */}
+      <ChatPanel selectedCompanySlug={company.slug} selectedCompanyName={company.canonicalName} />
     </main>
   );
 }

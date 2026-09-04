@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { ChatPanel } from "@/components/chat/chat-panel";
 import { CompanyList } from "@/components/company/company-list";
 import { Notice } from "@/components/ui/notice";
 import { listCompanies } from "@/src/db/repositories/companies";
@@ -72,6 +73,10 @@ export default async function DashboardPage() {
           {result.ok && result.data.length > 0 ? <CompanyList companies={result.data} /> : null}
         </div>
       </section>
+
+      {/* No company is selected here, so the agent will ask which company the
+          user means rather than guessing at an implicit reference. */}
+      <ChatPanel />
     </main>
   );
 }
