@@ -118,6 +118,7 @@ hard-coded value.
 | `pnpm db:verify`                    | Integration checks against a live local database (needs Docker)        |
 | `pnpm slice:run`                    | Run the evidence-backed vertical slice for one bootstrap company       |
 | `pnpm test:integration`             | Integration tests against a live local database (needs Docker)         |
+| `pnpm agent:ask "<question>"`       | Ask the agent one question from the terminal (needs an API key)        |
 
 ### Database workflow
 
@@ -207,13 +208,26 @@ final_score         = max(0, positive_normalized - risk_penalty - evidence_penal
 - An integration suite (`pnpm test:integration`) proving against a live database
   that a contradictory claim never overwrites the original
 
+**Delivered in Milestone 3**
+
+- `src/ai/provider-adapter.ts` - the only module that imports an AI SDK, so the
+  provider stays replaceable
+- Nine typed agent tools, every one returning a `ToolResult<T>` envelope with
+  citations, confidence, warnings and errors-as-data
+- Versioned prompts in `src/ai/prompts/v1/` (conversational agent, M&A analyst,
+  extractor shell)
+- `POST /api/chat` with streaming, bounded 10-message memory, and sessions
+  persisted to `chat_sessions` / `chat_messages`
+- A contextual chat panel that streams replies, shows which tools ran, renders
+  inline citations, and fails gracefully
+- `pnpm agent:ask --canonical` to re-run the six assignment questions as text
+
 **Not implemented yet, by design**
 
 - Web search, RSS, crawling or source fetching
-- Claim extraction and any LLM provider call - the pipeline is fed a stub payload
-- Chat and conversation memory
+- Claim extraction from live sources - the pipeline is still fed a stub payload
 - Scheduled monitoring
-- Comparison, market map or watchlist UX
+- Market map or watchlist UX
 - Deployment to Vercel or a hosted Supabase project
 
 ## Limitations
@@ -230,10 +244,20 @@ final_score         = max(0, positive_normalized - risk_penalty - evidence_penal
   in time), so re-running it adds a second set. Reset with `pnpm db:reset &&
 pnpm db:seed` for a clean slice. The score itself is keyed on its input hash
   and will not duplicate.
+- **The chat agent needs an `ANTHROPIC_API_KEY`.** Without one, `/api/chat`
+  returns a 503 and the panel says the provider is not configured. The tools,
+  envelopes, schemas, session persistence and UI are all covered by tests that
+  run without a key; the agent's own answers are not, because nothing can
+  generate them.
+- Geography is not recorded for any company and the `events` table stays empty
+  until the monitoring pipeline exists, so discovery questions ("targets in
+  Germany") and change questions ("what changed since yesterday?") correctly
+  return nothing. The agent is built to say so rather than fill the gap from the
+  model's own memory - which is the behaviour being tested there.
 
 ## Next milestone boundary
 
-**Milestone 3 - agent tools and contextual chat.** Typed retrieval and comparison
-tools, the Claude provider adapter behind a replaceable interface, versioned
-prompts, streaming grounded responses, bounded session memory, and citation
-checks on generated answers.
+**Milestone 4 - monitoring and discovery.** Source adapters and the shared
+pipeline, deduplication, identity resolution, run logging, daily scheduling and
+bounded manual execution - the step that finally replaces the stub payload with
+real retrieval.
