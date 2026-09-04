@@ -440,6 +440,61 @@ Build Milestone 3 — agent tools and contextual chat: typed retrieval and compa
 
 ---
 
+## Milestone 12 — Claude Code Build Milestone 3: Agent Tools and Contextual Chat
+
+### AI and tools used
+
+Claude Code on Claude Opus 5, following `CLAUDE_CODE_BUILD_MILESTONE_3.md`. This is the first milestone where an LLM runs _inside_ the product rather than only building it: the agent answers through Claude Sonnet 5, selected in `ANTHROPIC_MODEL` rather than written into code, via the Vercel AI SDK v7 and its Anthropic provider.
+
+The model choice is configuration for a specific reason. Every `agent_runs` row records which model produced an answer, so a change in answer quality months from now can be attributed to a model change rather than guessed at. Swapping to Opus is one line in `.env.local`, not a code change.
+
+### The design decision the milestone actually turned on
+
+The stated requirement was "the AI must not invent data." The naive reading is a strong instruction in the prompt. That does not work: a model told "only use tools" will still fill a silence, because an empty tool result reads like a malfunction, and the helpful move when a tool seems broken is to answer from memory.
+
+So the fix is in the envelope, not the prompt. `ToolResult<T>` distinguishes three outcomes — success, failure, and **empty-but-successful**. An empty result returns `ok: true` with `data: null` and a written reason, for example that headquarters geography is not recorded for any company yet. The model receives "the system looked and found nothing, and here is why," which is an _answer_, not an error to route around.
+
+That is the difference between a system that says "there are no German targets recorded" and one that names three German fintechs from training data with plausible-looking reasoning attached. The second is the failure mode this entire project exists to avoid, and the day-one architecture rule — that scores are computed in TypeScript and the LLM only explains them — is worth nothing if the retrieval layer lets the model improvise inputs.
+
+### Failures and how they were caught
+
+1. **My memory of the AI SDK was a version out of date.** I wrote `maxSteps` for the agentic loop ceiling and treated `convertToModelMessages` as synchronous. Both are wrong in v7: the ceiling is `stopWhen: stepCountIs(n)`, conversion returns a promise, and tools take `inputSchema` rather than `parameters`. Caught by `typecheck`, which is exactly why the adapter is one file — the correction touched one module instead of every call site.
+2. **A lint rule caught a data bug, not a style issue.** ESLint flagged "Cannot access ref value during render" in the chat panel. Following it revealed that `sessionIdRef` was declared but never assigned, so every message would have created a _new_ `chat_sessions` row: bounded conversation memory would have silently degraded to no memory at all, and the stored transcript would have fragmented into single-turn sessions. Neither typecheck nor any unit test would have caught it, and in the browser it would have looked like a model that simply forgot things. Fixed by minting the session id client-side with `crypto.randomUUID()` and having `ensureChatSession` honour the supplied id.
+3. **The user-facing error was raw JSON.** Loading the chat panel with no API key configured rendered `{"error":{"message":...}}` on screen. Only visible by actually opening the page in the state a first-time reader would hit. Fixed with a `readableError()` helper; the panel now says the provider is not configured and names the two variables to set.
+4. **Every CI run had been failing since Milestone 1, and I did not notice.** Tom forwarded a GitHub failure email. The workflow pinned Node 20 while pnpm 11.25 requires ≥22.13 for `node:sqlite`, so CI had never once succeeded — it worked locally on Node 24. The honest lesson is not the version pin: it is that in Milestone 1 I wrote a verification mechanism, committed it, and reported the milestone complete without ever watching that mechanism run. A green checkmark I never looked at is not verification. Fixed the Node version, corrected `engines` to match reality, and this time watched a run to completion before claiming anything.
+
+Browser verification also cost time to two environment problems worth recording: the dev server's HMR websocket failed and blocked hydration, so the panel had to be checked against a production build; and a stale `next start` held the port because killing the shell had not killed the child process.
+
+### Verification
+
+`format:check`, `lint`, `typecheck`, `test` (126 passing, up from 106), `test:integration` (20 passing against a live database, up from 4), and `build` all run to completion, and CI was watched green rather than assumed.
+
+The behavioural gate is the six questions the assignment names, run through `pnpm agent:ask --canonical` against the real provider. All six called at least one tool — none answered from memory — and the interesting results are the ones that returned nothing:
+
+- **"Which companies should eToro acquire in Germany?"** and **"Show me fintech startups in LATAM."** Both correctly reported that geography is not recorded for any company yet, stated that this is a data gap rather than evidence of absence, and offered an unfiltered search instead. No company was named from memory.
+- **"What changed since yesterday?"** Distinguished "nothing has been recorded" from "nothing happened," and named the missing monitoring pipeline as the reason.
+- **"Compare getquin and Dfns."** Refused a false symmetry: getquin has an evidence packet, Dfns is a bootstrap identity only, and comparing them today would mean "comparing evidence to a blank page."
+- **"Why do you recommend getquin?"** Corrected the premise in the question — the recommendation is _partner_, not acquire — and gave the four recorded blockers.
+- **"Explain your reasoning for their score."** Reproduced the weighted table, showed acquisition plausibility as unknown and excluded from normalisation rather than scored zero, surfaced the unresolved contradiction over registered users, and flagged unprompted that all three citations are stub sources.
+
+That last point matters more than the formatting: the agent volunteered that its own evidence base is provisional.
+
+### Limitations recorded honestly
+
+The answers are architecturally correct, not factually authoritative. The underlying evidence is still the deliberately synthetic Milestone 2 payload, so the reasoning chain is real while the figures are not. Two of the six questions return nothing because the discovery and monitoring pipelines are Milestone 4 work — that is the designed behaviour under an evidence-only rule, not a defect, but it is also the clearest statement of what remains unbuilt.
+
+### Human/engineering decisions
+
+- No completion entry was written to this log while the exit gate was blocked on a missing API key, per the milestone's own rule. The code was finished and pushed a day before this entry was added; the entry waited for evidence.
+- `refresh_company` and the monitoring pass ship as explicit stubs that say so in their own tool output, so the agent tells the user the capability is not implemented instead of appearing to run it.
+- The API key lives only in `.env.local`, which `.gitignore` excludes. I did not write it into any file; Tom pasted it himself, and rotated the first one after it passed through a chat transcript.
+
+### Next bounded milestone
+
+Build Milestone 4 — proactive discovery and monitoring: the scheduled research loop that populates geography, events, and the wider target universe, which is what turns the two honest "nothing recorded" answers above into real ones.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
