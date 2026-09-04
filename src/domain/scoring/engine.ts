@@ -237,6 +237,7 @@ export function scoreTarget({ config, policy, input }: ScoreTargetArgs): Scoring
   const triggeredGates: string[] = [];
   const triggeredPermanentGates: string[] = [];
   const unresolvedCriticalGates: string[] = [];
+  const unresolvedGates: string[] = [];
 
   for (const gate of rules.hardGates) {
     const supplied = scoringInput.hardGates[gate.key];
@@ -246,8 +247,13 @@ export function scoreTarget({ config, policy, input }: ScoreTargetArgs): Scoring
         triggeredPermanentGates.push(gate.key);
       }
     }
-    if (supplied.state === "unresolved" && gate.critical) {
-      unresolvedCriticalGates.push(gate.key);
+    if (supplied.state === "unresolved") {
+      unresolvedGates.push(gate.key);
+      // Only a *critical* unresolved gate suppresses the score entirely. The
+      // rest still have to block Acquire - see the blocker below.
+      if (gate.critical) {
+        unresolvedCriticalGates.push(gate.key);
+      }
     }
   }
 
@@ -302,6 +308,16 @@ export function scoreTarget({ config, policy, input }: ScoreTargetArgs): Scoring
   }
   if (triggeredGates.length > 0) {
     acquireBlockers.push(`hard gate triggered: ${triggeredGates.join(", ")}`);
+  }
+  // An unresolved gate is an open question, and an open question is not a pass.
+  // Only critical gates force Research only, so before this check a non-critical
+  // unresolved gate - `strategic_contradiction` is the one in v0.2 - was counted
+  // neither as triggered nor as critical and therefore vanished: "we have not
+  // established whether this contradicts the strategy" was treated exactly like
+  // "it does not". Acquire is the one recommendation that cannot be walked back
+  // cheaply, so it has to clear every gate explicitly.
+  if (unresolvedGates.length > 0) {
+    acquireBlockers.push(`hard gate unresolved: ${unresolvedGates.join(", ")}`);
   }
   if (finalScore !== null && finalScore < rules.thresholds.acquireMinFinalScore) {
     acquireBlockers.push(

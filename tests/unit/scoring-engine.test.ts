@@ -307,6 +307,37 @@ describe("hard gates", () => {
     expect(result.finalScore).toBeNull();
     expect(result.recommendation).toBe("research_only");
   });
+
+  it("blocks Acquire on an unresolved gate that is not critical", () => {
+    // `strategic_contradiction` is permanent but not critical, so it does not
+    // force Research only. That previously meant an unresolved one was counted
+    // neither as triggered nor as critical and disappeared entirely: a perfect
+    // scorecard could be recommended for acquisition while nobody had
+    // established whether the target contradicts eToro's strategy. An open
+    // question is not a pass.
+    const result = platform(
+      platformInput(5, {
+        hardGates: {
+          ...allGatesClear(),
+          strategic_contradiction: {
+            state: "unresolved",
+            reason: "Overlap with an existing partner has not been checked.",
+          },
+        },
+      }),
+    );
+
+    // Still a real score - this gate is not critical, so the evidence is good
+    // enough to publish a number.
+    expect(result.scoreState).toBe("scored");
+    expect(result.finalScore).toBe(100);
+    // But not a purchase.
+    expect(result.acquireEligible).toBe(false);
+    expect(result.acquireBlockers.join(" ")).toMatch(
+      /hard gate unresolved: strategic_contradiction/,
+    );
+    expect(result.recommendation).not.toBe("acquire");
+  });
 });
 
 describe("Acquire eligibility", () => {
