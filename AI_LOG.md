@@ -495,6 +495,61 @@ Build Milestone 4 — proactive discovery and monitoring: the scheduled research
 
 ---
 
+## Milestone 13 — Security and Quality Audit Before Opening the Pipeline to the Live Web
+
+### Why this happened when it did
+
+Milestones 1 to 3 were each verified against their own exit gate and each one passed. I did not treat that as sufficient. Milestone 4 is the point where the system stops running on a controlled stub payload and starts ingesting text from pages that anyone can publish, and a weakness that is theoretical while the data is synthetic becomes reachable the moment it is not. So before starting it I commissioned a full audit of the three completed milestones — static analysis, the specific edge cases I could think of, an active hunt for anything else, and a review of the commit history itself.
+
+I asked for the report first and explicitly withheld permission to fix anything until I had read it. I wanted to judge the severity myself rather than be handed a diff.
+
+### What the audit confirmed was already correct
+
+Worth recording, because a report that finds only problems is not an audit: division by zero is guarded and throws a typed error; the `max(0, …)` floor holds because Zod enforces non-negative penalties; Zod rejects `Infinity` and `NaN`, which was checked by running it rather than assumed; evidence bands are contiguous with no gap; all 25 tables have row-level security enabled with read-only access for the public role and no write policy at all; all 48 foreign keys carry an explicit delete action; the eight gold benchmark companies have zero overlap with the six bootstrap identities; page context does update correctly on navigation; and model output is rendered as React text nodes with the source URL scheme constrained at both the Zod and database layers.
+
+### The finding that mattered
+
+The chat route accepted the browser's message list and forwarded it to the model. A UI message list contains tool parts, and a tool part carries the tool's _output_ — so the request body decided what the tools had returned.
+
+This was not left as an argument. A single crafted POST containing a fabricated `get_company_profile` result for Revolut — a company absent from the database — made the agent report a final score of 99.5 and a recommendation of Acquire, citing the supplied source. It only hesitated because the URL I used was obviously fake; with a plausible domain it would have passed without comment.
+
+The entire project is built on the claim that the agent cannot invent data. Every defence supporting that claim — the deterministic engine, the `ToolResult` envelope, the prompt discipline, the empty-results-are-answers design — sat downstream of an input that could be forged. The prompt was honest; the transport was not.
+
+The fix is architectural rather than defensive. History is now rebuilt on the server from `chat_messages`; the client's array supplies only the text of the newest question. The adapter takes provider-neutral turns, so the replayed type has nowhere to put a tool result at all. That in turn made two other findings load-bearing: `loadRecentMessages` had been written, documented as the agent's memory, and called from nothing but a test — so the stored transcript was write-only and a page reload silently lost the conversation while the code claimed otherwise; and session ids travel in the request body, so sessions had to become owned before replaying them was safe.
+
+### The other findings
+
+- **No prompt-injection delimiting**, in direct violation of a rule in this project's own `CLAUDE.md`. Rules in a contract file are not self-enforcing. Fixed with a wrapper that a page cannot close from inside, plus prompt rules; verified by poisoning a real database excerpt and confirming the agent reported the true score, quoted the injection back, and named the source.
+- **The endpoint was unauthenticated and unmetered.** Eight model round trips per call against a metered key, reachable by anyone. Now rate limited per client and per session.
+- **`compare_companies` produced duplicate citation numbers**, because each profile numbers its sources from `[1]` and the lists were concatenated. A sentence about one company could be footnoted with the other's evidence — a citation pointing at the wrong source is worse than none, because it looks verified.
+- **The scoring engine ignored an unresolved non-critical hard gate entirely.** A target could be recommended for acquisition while nobody had established whether it contradicts eToro's strategy. The system was treating "we have not checked" as "there is no problem" — the exact substitution the project exists to prevent, and it was in the deterministic code rather than in anything a model wrote.
+- **A malformed tool call killed the answer and leaked a run row.** Input validation runs before `execute`, so the `guardTool` wrapper could never catch it, and the throw happened after the HTTP response had been returned, past the route's own error handling.
+- **A check-then-insert race** in session creation.
+
+### A decision about the repair function
+
+The tool-input repair fixes shape and refuses to fix meaning. Coercing `"10"` to `10` is safe. Dropping an invented category filter so the query runs anyway is not: the tool would succeed, return the unfiltered universe, and the model would present it as the answer to a narrow question. A search that quietly stops meaning what it said is more dangerous than one that fails, so those calls are left to fail.
+
+### The commit history review
+
+I also had the history reviewed against the "meaningful commit history" criterion. Twenty-five commits, all conventional-commit formatted, every one carrying an explanatory body of eight to thirty-two lines, no vague messages, and no secret ever committed. Two commits were flagged as larger than ideal.
+
+I decided against rewriting them. The commits are already pushed, and a rebase would replace authentic timestamps and working sequence with a tidied reconstruction — destroying the very evidence of how the work actually proceeded that the criterion is asking to see. A slightly large commit with a thorough message is better evidence than a perfect history that was manufactured afterwards.
+
+### Verification
+
+`format:check`, `lint`, `typecheck`, 156 unit tests (up from 126) and 22 integration tests (up from 20) all pass, and the production build succeeds. More to the point, each security fix was verified against the running server rather than against its own unit test: the injection payload now returns an honest refusal with the real tool called, a second browser presenting a known session id is rejected with 403, the owner cookie is set HttpOnly, the rate limiter returns 429 with a correct `Retry-After`, and the poisoned source is reported rather than obeyed.
+
+### What this changes about how I read a green test suite
+
+Every one of these defects was in code that type-checked, linted clean and passed its tests. The injection hole in particular existed in a file whose own comments described the guarantee it was breaking. Tests confirm that code does what its author expected; they say nothing about what an adversary can make it do, and nothing about whether the author's expectation was the right one. The audit's most useful instruction was the one that made it adversarial — asking not "does this work" but "what can I make this do".
+
+### Next bounded milestone
+
+Build Milestone 4 — proactive discovery and monitoring, now with the untrusted-input boundary in place before the first live page is fetched rather than after.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:

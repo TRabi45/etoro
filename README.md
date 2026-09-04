@@ -6,12 +6,14 @@ builds evidence-backed company profiles, scores them with deterministic and
 versioned logic, and explains its reasoning conversationally with citations,
 unknowns and a counter-thesis.
 
-> **Current state: Build Milestone 2 of 6.** The evidence-backed vertical slice
-> works end to end: sources, claims, linked evidence, fundamentals, a strategic
+> **Current state: Build Milestone 3 of 6.** The evidence-backed vertical slice
+> works end to end - sources, claims, linked evidence, fundamentals, a strategic
 > assessment and a deterministic score for one company, rendered as a profile
-> where every material statement carries a citation. It is **not yet a working
-> research agent** - there is no web retrieval, no LLM call and no chat, so the
-> pipeline is currently fed a clearly-labelled synthetic stub payload. See
+> where every material statement carries a citation - and a grounded chat agent
+> answers questions about it through nine typed tools. It is **not yet a working
+> research agent**: there is no web retrieval, so the pipeline is still fed a
+> clearly-labelled synthetic stub payload and the agent answers honestly that it
+> has nothing recorded for anything the payload does not cover. See
 > [Milestone status](#milestone-status).
 
 ## Why the product is shaped this way
@@ -48,7 +50,9 @@ multi-agent orchestration, no vector database.
 | Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.              |
 | Pipeline               | `src/pipeline/`                  | Extraction-payload contract and the orchestration that writes the evidence tree.        |
 | Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.         |
-| Stub payload           | `data/stub/`                     | Synthetic stand-in for LLM extraction until Milestone 3. Clearly labelled as such.      |
+| Stub payload           | `data/stub/`                     | Synthetic stand-in for live extraction until Milestone 4. Clearly labelled as such.     |
+| AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.            |
+| Server utilities       | `src/server/`                    | Transport concerns that are not repositories - currently endpoint rate limiting.        |
 | Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                               |
 | Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                             |
 | Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                           |
@@ -96,10 +100,12 @@ development values, not secrets, but `.env.local` is gitignored regardless - onl
 | `NEXT_PUBLIC_SUPABASE_URL`      | Browser and server | Project URL. Local default `http://127.0.0.1:54321`.                                             |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server | Restricted by row-level security to reading the public dashboard tables.                         |
 | `SUPABASE_SERVICE_ROLE_KEY`     | Server only        | Bypasses row-level security. The only credential that may write. Never prefix it `NEXT_PUBLIC_`. |
+| `ANTHROPIC_API_KEY`             | Server only        | From <https://console.anthropic.com>. Required for chat; everything else runs without it.        |
+| `ANTHROPIC_MODEL`               | Server only        | For example `claude-sonnet-5`. Configuration, never a literal in code.                           |
 
-No AI provider or model identifier is configured yet: AI integration begins in
-Milestone 3, and the model name will be environment configuration rather than a
-hard-coded value.
+The model is an environment variable rather than a constant so that swapping it -
+for cost, latency or capability - never means editing application logic, and so
+that every `agent_runs` row can record which model actually produced an answer.
 
 ## Commands
 
@@ -222,6 +228,32 @@ final_score         = max(0, positive_normalized - risk_penalty - evidence_penal
   inline citations, and fails gracefully
 - `pnpm agent:ask --canonical` to re-run the six assignment questions as text
 
+**Hardening pass before Milestone 4**
+
+An audit before opening the pipeline to the live web found and fixed several
+issues that no type check, lint rule or existing test could have caught. The
+three that changed the architecture:
+
+- **Conversation history is rebuilt on the server.** The route previously
+  forwarded the browser's message list to the model, and a UI message list
+  carries tool _outputs_ - so a crafted request could hand the agent a fabricated
+  company profile and have it reported as looked-up fact. The client's array now
+  supplies only the newest question; everything replayed comes from
+  `chat_messages`. The adapter takes provider-neutral turns, so the replayed type
+  has nowhere to put a tool result.
+- **`chat_sessions` rows are owned.** Session ids travel in the request body, so
+  a server-minted token in an HttpOnly cookie now proves that the browser
+  continuing a conversation is the one that started it. See
+  `supabase/migrations/20260904103000_add_chat_session_owner.sql`.
+- **External source text is delimited.** Excerpts are wrapped in
+  `<untrusted_source_text>` (with the delimiter stripped from the text itself, so
+  a page cannot close the block and escape into instruction position), and the
+  prompt states that tool content is data and never an instruction.
+
+Also: the chat endpoint is rate limited per client and per session, malformed
+tool inputs are repaired rather than fatal, and the scoring engine now blocks
+Acquire while _any_ hard gate is unresolved, not only a critical one.
+
 **Not implemented yet, by design**
 
 - Web search, RSS, crawling or source fetching
@@ -249,6 +281,11 @@ pnpm db:seed` for a clean slice. The score itself is keyed on its input hash
   envelopes, schemas, session persistence and UI are all covered by tests that
   run without a key; the agent's own answers are not, because nothing can
   generate them.
+- **The chat endpoint is throttled, not authenticated.** There is no login: the
+  session cookie proves a browser is continuing its own conversation, and the
+  rate limiter bounds what any one caller can spend. Both are the right scope for
+  an internal demo and neither is an access control. The limiter is also
+  in-memory, so it resets on restart and counts per instance.
 - Geography is not recorded for any company and the `events` table stays empty
   until the monitoring pipeline exists, so discovery questions ("targets in
   Germany") and change questions ("what changed since yesterday?") correctly
