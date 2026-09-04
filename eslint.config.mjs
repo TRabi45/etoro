@@ -19,7 +19,14 @@ const eslintConfig = defineConfig([
   {
     // Architectural boundary, enforced by the linter rather than by convention:
     // UI code renders data that a repository already fetched and validated.
+    //
+    // `app/api/**` is deliberately excluded. The rule exists to keep rendering
+    // code away from the database, and a route handler is not rendering code -
+    // it is the server-side transport boundary, and the only place allowed to
+    // construct the service-role client for writes. Everything under app/ that
+    // renders is still covered.
     files: ["app/**/*.tsx", "app/**/*.ts", "components/**/*.tsx"],
+    ignores: ["app/api/**"],
     rules: {
       "no-restricted-imports": [
         "error",
