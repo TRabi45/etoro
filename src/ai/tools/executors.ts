@@ -1,3 +1,4 @@
+import { mergeCitations } from "@/src/ai/tools/citations";
 import {
   repositoryProblemToError,
   toolEmpty,
@@ -286,7 +287,10 @@ export async function executeCompareCompanies(
       note: "A null value means the measure is unknown or the company is unassessed. Never compare a null as if it were zero.",
     },
     {
-      citations: found.flatMap(({ profile }) => citationsFromProfile(profile)),
+      // Renumbered, not concatenated: each profile numbers its own sources from
+      // [1], so concatenation would produce two different sources both called
+      // [1] and let a sentence about one company cite the other's evidence.
+      citations: mergeCitations(found.map(({ profile }) => citationsFromProfile(profile))),
       confidence: rows.every((row) => row.hasResearch) ? "medium" : "low",
       warnings,
     },
@@ -313,24 +317,29 @@ export async function executeGetRecentEvents(
     );
   }
 
-  const citations: Citation[] = result.data.flatMap((event, index) =>
-    event.source
-      ? [
-          {
-            sourceId: event.source.id,
-            index: index + 1,
-            url: event.source.url,
-            title: event.source.title,
-            publisher: event.source.publisher,
-            sourceType: "other" as const,
-            trustTier: "secondary" as const,
-            publishedAt: event.source.publishedAt,
-            accessedAt: event.source.accessedAt,
-            excerpt: null,
-            relation: "supports" as const,
-          },
-        ]
-      : [],
+  // Numbered through the same merge helper as every other multi-record tool, so
+  // an event without a source cannot leave a gap in the sequence and two events
+  // citing one article cannot give it two numbers.
+  const citations: Citation[] = mergeCitations(
+    result.data.map((event) =>
+      event.source
+        ? [
+            {
+              sourceId: event.source.id,
+              index: 0,
+              url: event.source.url,
+              title: event.source.title,
+              publisher: event.source.publisher,
+              sourceType: "other" as const,
+              trustTier: "secondary" as const,
+              publishedAt: event.source.publishedAt,
+              accessedAt: event.source.accessedAt,
+              excerpt: null,
+              relation: "supports" as const,
+            },
+          ]
+        : [],
+    ),
   );
 
   return toolSuccess(
