@@ -1,3 +1,4 @@
+import { neutralizeCitations } from "@/src/ai/tools/untrusted";
 import type { PacketCitation } from "@/src/validation/evidence-packet";
 import type { ConfidenceLevel } from "@/src/config/taxonomy";
 
@@ -48,12 +49,18 @@ export interface SuccessOptions {
   warnings?: string[];
 }
 
-/** A tool call that found what it was asked for. */
+/**
+ * A tool call that found what it was asked for.
+ *
+ * Citations are neutralised on the way out rather than at each call site, so a
+ * tool added later cannot forget to do it: externally-authored text reaches the
+ * model delimited, or it does not reach the model at all.
+ */
 export function toolSuccess<T>(data: T, options: SuccessOptions = {}): ToolResult<T> {
   return {
     ok: true,
     data,
-    citations: options.citations ?? [],
+    citations: neutralizeCitations(options.citations ?? []),
     asOf: options.asOf ?? new Date().toISOString(),
     confidence: options.confidence ?? "medium",
     warnings: options.warnings ?? [],
