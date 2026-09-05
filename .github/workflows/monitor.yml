@@ -1,0 +1,57 @@
+name: Scheduled monitoring
+
+# The proactive half of the product. Everything else in this system responds to
+# a person; this is the part that looks at the world without being asked.
+on:
+  schedule:
+    # 06:00 UTC, before a European working day starts. Cron on GitHub Actions is
+    # best-effort and can be delayed under load, which is exactly why the run
+    # carries a daily idempotency key rather than assuming it fires once.
+    - cron: "0 6 * * *"
+  # Manual trigger, so the schedule can be exercised without waiting a day.
+  workflow_dispatch:
+    inputs:
+      max_sources:
+        description: "Maximum documents to fetch"
+        required: false
+        default: "5"
+
+# A second run starting while the first is still going would fetch the same
+# feeds twice. The idempotency key would make that harmless, but not free.
+concurrency:
+  group: scheduled-monitoring
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    # A monitoring pass fetches several documents and calls a model for each, so
+    # it needs more than the default patience - but not unbounded patience.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      # Must stay >= 22.13, for the same reason as ci.yml: pnpm 11 needs the
+      # node:sqlite built-in.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run monitoring pass
+        # Secrets are injected as environment variables and never passed as
+        # command-line arguments, which would put them in the process table and
+        # in any log that echoes the command.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+        run: pnpm monitor --max ${{ inputs.max_sources || '5' }}

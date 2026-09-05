@@ -24,6 +24,7 @@
     "db:types": "supabase gen types typescript --local --schema public > src/db/types.generated.ts",
     "db:verify": "tsx scripts/verify-db.ts",
     "slice:run": "tsx scripts/run_vertical_slice.ts",
+    "monitor": "tsx scripts/monitor.ts",
     "agent:ask": "tsx scripts/ask-agent.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },

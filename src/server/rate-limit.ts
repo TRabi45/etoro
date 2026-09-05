@@ -36,6 +36,15 @@ export const CHAT_IP_RULE: RateLimitRule = { limit: 20, windowMs: 5 * 60 * 1000 
 export const CHAT_SESSION_RULE: RateLimitRule = { limit: 12, windowMs: 60 * 1000 };
 
 /**
+ * Monitoring runs, which are the most expensive action in the application.
+ *
+ * Several fetches plus a model call per document, so this is deliberately much
+ * tighter than the chat limit: three in ten minutes is enough for a demo and far
+ * too few to be worth abusing.
+ */
+export const MONITOR_RUN_RULE: RateLimitRule = { limit: 3, windowMs: 10 * 60 * 1000 };
+
+/**
  * The longest question accepted.
  *
  * A very long message is either a mistake or an attempt to push the system
