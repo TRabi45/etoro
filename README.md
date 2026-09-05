@@ -6,15 +6,14 @@ builds evidence-backed company profiles, scores them with deterministic and
 versioned logic, and explains its reasoning conversationally with citations,
 unknowns and a counter-thesis.
 
-> **Current state: Build Milestone 3 of 6.** The evidence-backed vertical slice
-> works end to end - sources, claims, linked evidence, fundamentals, a strategic
-> assessment and a deterministic score for one company, rendered as a profile
-> where every material statement carries a citation - and a grounded chat agent
-> answers questions about it through nine typed tools. It is **not yet a working
-> research agent**: there is no web retrieval, so the pipeline is still fed a
-> clearly-labelled synthetic stub payload and the agent answers honestly that it
-> has nothing recorded for anything the payload does not cover. See
-> [Milestone status](#milestone-status).
+> **Current state: Build Milestone 4 of 6.** The system now reads the world on
+> its own: a scheduled pipeline fetches fintech press, an Extractor model turns
+> each document into validated claims and events, entity resolution decides
+> conservatively whether a named company is one already tracked, and the
+> dashboard shows what the last run produced and what it missed. The
+> evidence-backed profile and the grounded chat agent from earlier milestones sit
+> on top of it. Still ahead: the full dashboard (Milestone 5) and deployment
+> (Milestone 6). See [Milestone status](#milestone-status).
 
 ## Why the product is shaped this way
 
@@ -48,7 +47,7 @@ multi-agent orchestration, no vector database.
 | Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                          |
 | Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                |
 | Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.              |
-| Pipeline               | `src/pipeline/`                  | Extraction-payload contract and the orchestration that writes the evidence tree.        |
+| Pipeline               | `src/research/pipeline/`         | Extraction-payload contract and the orchestration that writes the evidence tree.        |
 | Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.         |
 | Stub payload           | `data/stub/`                     | Synthetic stand-in for live extraction until Milestone 4. Clearly labelled as such.     |
 | AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.            |
@@ -123,6 +122,7 @@ that every `agent_runs` row can record which model actually produced an answer.
 | `pnpm db:types`                     | Regenerate `src/db/types.generated.ts` from the running local database |
 | `pnpm db:verify`                    | Integration checks against a live local database (needs Docker)        |
 | `pnpm slice:run`                    | Run the evidence-backed vertical slice for one bootstrap company       |
+| `pnpm monitor`                      | Run one monitoring pass. `--max N`, `--manual`, `--key <value>`        |
 | `pnpm test:integration`             | Integration tests against a live local database (needs Docker)         |
 | `pnpm agent:ask "<question>"`       | Ask the agent one question from the terminal (needs an API key)        |
 
@@ -205,7 +205,7 @@ final_score         = max(0, positive_normalized - risk_penalty - evidence_penal
   can be traced back through claims to sources
 - A strictly typed `EvidencePacket` (facts, contradictions, unknowns, freshness)
   enforced at the repository boundary; a claim cannot be written without a source
-- `src/pipeline/` - the real orchestration logic, plus an `ExtractionPayload`
+- `src/research/pipeline/` - the real orchestration logic, plus an `ExtractionPayload`
   contract the Milestone 3 LLM adapter will have to satisfy
 - `pnpm slice:run` - writes the full evidence tree for one bootstrap company and
   runs the deterministic engine over the recorded inputs
@@ -254,22 +254,48 @@ Also: the chat endpoint is rate limited per client and per session, malformed
 tool inputs are repaired rather than fatal, and the scoring engine now blocks
 Acquire while _any_ hard gate is unresolved, not only a critical one.
 
+**Delivered in Milestone 4**
+
+- `src/research/sources/` - URL normalisation, content hashing, and a fetcher
+  bounded by scheme, destination, time and size, with SSRF protection that
+  resolves every address a host answers with and re-checks after redirects
+- `src/research/pipeline/runner.ts` - the eight-step orchestration loop, where a
+  failed document costs one document and never the run
+- The Extractor role, with a relevance gate deciding which named entities may
+  enter the monitored universe at all
+- Conservative entity resolution: equality after normalisation, never string
+  similarity, so `Bit2C` and `B2C2` cannot merge
+- `POST /api/monitor/run`, `pnpm monitor`, and a daily GitHub Actions schedule
+- Dashboard panels for the last run and the recent-events feed
+
 **Not implemented yet, by design**
 
-- Web search, RSS, crawling or source fetching
-- Claim extraction from live sources - the pipeline is still fed a stub payload
-- Scheduled monitoring
+- Web search as a discovery source - RSS only, which needs no additional secret
+- Company enrichment after discovery: a discovered company is identity-only and
+  stays `discovered_unreviewed` until a human reviews it
 - Market map or watchlist UX
 - Deployment to Vercel or a hosted Supabase project
 
 ## Limitations
 
-- **The profile data is synthetic.** `pnpm slice:run` writes a hardcoded stub
-  payload with `example.com` sources, and the page says so in a provenance
-  notice. The evidence structure, citations and scoring are real; the underlying
-  facts are invented, deliberately, so stage-two research is never passed off as
-  agent discovery. Live retrieval arrives in Milestone 4.
-- Only one company has a profile. The other five remain identity-only.
+- **Two kinds of data now coexist, and they are not equally trustworthy.**
+  Claims and events written by the monitoring pipeline are real: fetched from a
+  real article, extracted by a model, and traceable to a URL. The _profile_ for
+  `getquin` is still the synthetic stub payload from `pnpm slice:run`, with
+  `example.com` sources and a provenance notice on the page. Its evidence
+  structure, citations and score are real; its underlying facts are invented, so
+  the stage-two research is never passed off as agent discovery.
+- **Only `getquin` has a scored profile.** Discovered companies are identity-only
+  and unscored - the pipeline reads news, and news does not establish the
+  fundamentals a score needs.
+- **Extraction quality is bounded by what one article says.** Geography, revenue
+  and licensing are rarely stated in press coverage, so most companies stay
+  without them, which is why the search tool still reports geography as
+  unrecorded.
+- **A run that reports `partial_success` is the normal case.** Paywalls, blocked
+  crawlers and extraction timeouts are ordinary conditions on the open web. The
+  status means "something was missed and here is what", not "something is
+  broken".
 - The gold benchmark contains expectations for eight companies and is not yet
   executed; the evaluation runner arrives in Milestone 6.
 - `pnpm slice:run` is append-only for claims (an observation is made at a point

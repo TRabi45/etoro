@@ -550,6 +550,62 @@ Build Milestone 4 — proactive discovery and monitoring, now with the untrusted
 
 ---
 
+## Milestone 14 — Claude Code Build Milestone 4: Monitoring and Discovery Pipeline
+
+### AI and tools used
+
+Claude Code on Claude Opus 5. This is the milestone where a second model role enters the product: the **Extractor**, running on Claude Sonnet 5 through the same provider adapter as the conversational agent. Three prompt roles now exist in the repository, each versioned, and every record the pipeline writes names the prompt version and the model that produced it.
+
+### The design decision the milestone turned on
+
+The Extractor is fed fetched web pages, which is the first time this system reads text written by strangers. The untrusted-text delimiter built during the pre-milestone security audit exists precisely for this, and it went in before the first live fetch rather than after — which was the whole reason for auditing early.
+
+But delimiting is only half the problem, and it is the half I got right first. The half I got wrong is **what the pipeline is allowed to conclude from what it read**.
+
+### The failure worth recording
+
+The first working end-to-end run produced a monitored acquisition universe containing Fanta, Bran Castle (a tourist attraction in Romania), Home Depot, Michaels, the National Retail Federation, and TechCrunch — the publisher of the article. It had read one story about Halloween retail spending and added every proper noun in it as an acquisition candidate.
+
+Nothing failed. No error, no warning, no failing test. The pipeline did exactly what I told it to: resolve an entity, and if it matches nothing known, create it.
+
+What I had skipped was the classifier the architecture's own discovery workflow puts between "this name is unknown" and "create a company" — one step in a numbered list, easy to read past because the steps around it are the interesting ones. The cost is not subtle in retrospect: a target list that grows by every name in the news is not a target list, and an analyst opening that dashboard learns immediately that the system has no judgement.
+
+The same run exposed a second defect of the same shape. Every event extracted from an article was attributed to `entities_mentioned[0]` — the first name in the list — because I wrote that as a placeholder and never returned to it. A Home Depot skeleton was filed under the National Retail Federation; a Microsoft outage under TechCrunch. Those rows are the dangerous kind: indistinguishable from correct ones when read later, with nothing downstream able to tell that the attribution was arbitrary.
+
+Both were fixed by making the Extractor answer questions it is well placed to answer and I am not: which named entities this document _establishes_ as financial-services businesses, and which entity each event is actually about. Both fields go beyond the milestone document's stated interfaces. I judged the interfaces incomplete rather than accepting wrong data, and said so rather than quietly deviating.
+
+After the gate, the same feeds produced PayPal, PayPal Ventures, Revolut, Yuno, KeyCorp and Regions — every one a real financial-services company, with Yuno's 45 million dollar Series B and a collapsed PayPal transaction as the material events. That is a usable first screen.
+
+### What running it taught that reading it did not
+
+Every remaining defect was found by running the pipeline against the live web, and none of them could have been found another way:
+
+- **`maxSources` capped attempts rather than fetches.** One publisher that blocks crawlers sat at the top of the candidate list, consumed every slot with 403s, and the run finished having fetched nothing — while looking, from its own status, like a working pipeline.
+- **The fetcher requested the _normalised_ URL.** Normalisation strips `www` and forces https so two spellings of one article deduplicate; using that rewritten URL as the request target made a publisher answer 403 to a host that serves the same page happily. What is safe to compare is not automatically safe to send.
+- **A partial unique index cannot be an `ON CONFLICT` target.** Every event insert failed against it, and the run dutifully recorded the failures as warnings and carried on — the resilience design working as intended, and incidentally concealing a bug behind it.
+- **`process.exit()` aborted the run with a libuv assertion** while the database client's sockets were still closing, turning a green run into a failed workflow.
+- **Finextra blocks crawlers on every article while serving an open feed.** Keeping it meant every run reporting `partial_success` for a reason nobody intended to fix, which teaches whoever reads the dashboard to ignore the status. It was removed and the reason recorded beside the feed list so it does not come back.
+
+### Human judgment
+
+Tom made two calls that changed the implementation. On the event taxonomy — where the milestone's seven categories collided with the database's twenty-seven — he asked for main categories with sub-categories rather than either option I offered, which is what the data actually wants: a coarse label the model can justify, and a precise one recorded only when a source establishes it, with the pairing enforced by a database constraint. And he asked why the repository had two pipeline directories, a question with no good answer; they are now one.
+
+He had also declined, before this milestone, to rewrite git history to tidy two large commits, on the grounds that authentic sequence is better evidence than a reconstruction. That decision applied again here: the commit meant to move the pipeline directory only copied it, and the correction is a visible follow-up commit rather than an invisible amend.
+
+### Verification
+
+`format:check`, `lint`, `typecheck`, 185 unit tests (up from 156), 31 integration tests (up from 22) and the production build all pass. Both workflow files parse as valid YAML.
+
+Beyond the suites, the exit gate was demonstrated rather than asserted: `POST /api/monitor/run` executed the full eight-step loop in 90 seconds and returned its counts; a real pass survived seven consecutive 403s and two extraction timeouts and still wrote its claims and events; and the dashboard was loaded in a browser and screenshotted showing the run status, its counters, its warnings, and real extracted events with working source links.
+
+Three Milestone 3 integration tests failed after this work, correctly. They asserted that the universe contained exactly six companies and zero events — true while only a stub payload could write, false the moment a pipeline exists. They now assert the invariants they were really protecting rather than a snapshot of the data at one moment.
+
+### Next bounded milestone
+
+Build Milestone 5 — the complete dashboard: intelligence home, market map, watchlist and filtering over the universe this pipeline now populates.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
