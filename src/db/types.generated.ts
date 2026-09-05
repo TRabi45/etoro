@@ -778,9 +778,11 @@ export type Database = {
           agent_run_id: string
           company_id: string | null
           created_at: string
+          dedupe_key: string | null
           etoro_relevance: string | null
+          event_category: Database["public"]["Enums"]["event_category"]
           event_date: string | null
-          event_type: Database["public"]["Enums"]["event_type"]
+          event_type: Database["public"]["Enums"]["event_type"] | null
           id: string
           materiality: Database["public"]["Enums"]["materiality_level"] | null
           primary_source_id: string | null
@@ -791,9 +793,11 @@ export type Database = {
           agent_run_id: string
           company_id?: string | null
           created_at?: string
+          dedupe_key?: string | null
           etoro_relevance?: string | null
+          event_category: Database["public"]["Enums"]["event_category"]
           event_date?: string | null
-          event_type: Database["public"]["Enums"]["event_type"]
+          event_type?: Database["public"]["Enums"]["event_type"] | null
           id?: string
           materiality?: Database["public"]["Enums"]["materiality_level"] | null
           primary_source_id?: string | null
@@ -804,9 +808,11 @@ export type Database = {
           agent_run_id?: string
           company_id?: string | null
           created_at?: string
+          dedupe_key?: string | null
           etoro_relevance?: string | null
+          event_category?: Database["public"]["Enums"]["event_category"]
           event_date?: string | null
-          event_type?: Database["public"]["Enums"]["event_type"]
+          event_type?: Database["public"]["Enums"]["event_type"] | null
           id?: string
           materiality?: Database["public"]["Enums"]["materiality_level"] | null
           primary_source_id?: string | null
@@ -1468,6 +1474,14 @@ export type Database = {
         | "b2b_saas"
         | "mixed"
       enabling_layer: "ai" | "data" | "community" | "none"
+      event_category:
+        | "acquisition"
+        | "funding"
+        | "product_launch"
+        | "regulatory"
+        | "executive"
+        | "distress"
+        | "other"
       event_type:
         | "acquisition"
         | "divestiture"
@@ -1776,6 +1790,15 @@ export const Constants = {
         "mixed",
       ],
       enabling_layer: ["ai", "data", "community", "none"],
+      event_category: [
+        "acquisition",
+        "funding",
+        "product_launch",
+        "regulatory",
+        "executive",
+        "distress",
+        "other",
+      ],
       event_type: [
         "acquisition",
         "divestiture",

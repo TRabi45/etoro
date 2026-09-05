@@ -1,6 +1,6 @@
 import { createPublicClient } from "@/src/db/client";
 import type { RepositoryResult } from "@/src/db/repositories/result";
-import type { EventType, MaterialityLevel } from "@/src/config/taxonomy";
+import type { EventCategory, EventType, MaterialityLevel } from "@/src/config/taxonomy";
 
 /**
  * Material events.
@@ -15,7 +15,10 @@ export interface EventSummary {
   id: string;
   companySlug: string | null;
   companyName: string | null;
-  eventType: EventType;
+  /** The coarse category, always present. */
+  eventCategory: EventCategory;
+  /** The precise subtype, present only when a source established it. */
+  eventType: EventType | null;
   eventDate: string | null;
   publishedAt: string | null;
   summary: string;
@@ -35,6 +38,7 @@ export interface RecentEventsFilters {
   sinceDate: string;
   companySlug?: string;
   competitor?: string;
+  eventCategories?: EventCategory[];
   eventTypes?: EventType[];
   limit: number;
 }
@@ -50,10 +54,17 @@ export async function getRecentEvents(
   let query = connection.client
     .from("events")
     .select(
-      "id, event_type, event_date, published_at, summary, materiality, etoro_relevance, companies(slug, canonical_name), sources(id, url, title, publisher, published_at, accessed_at)",
+      "id, event_category, event_type, event_date, published_at, summary, materiality, etoro_relevance, companies(slug, canonical_name), sources(id, url, title, publisher, published_at, accessed_at)",
     )
-    .gte("event_date", filters.sinceDate);
+    // Either date qualifies. Many articles report that something happened
+    // without saying when, and filtering on `event_date` alone would hide every
+    // one of those from the "what changed?" feed - which is the question this
+    // repository exists to answer.
+    .or(`event_date.gte.${filters.sinceDate},published_at.gte.${filters.sinceDate}`);
 
+  if (filters.eventCategories && filters.eventCategories.length > 0) {
+    query = query.in("event_category", filters.eventCategories);
+  }
   if (filters.eventTypes && filters.eventTypes.length > 0) {
     query = query.in("event_type", filters.eventTypes);
   }
@@ -73,7 +84,8 @@ export async function getRecentEvents(
 
   type EventRow = {
     id: string;
-    event_type: EventType;
+    event_category: EventCategory;
+    event_type: EventType | null;
     event_date: string | null;
     published_at: string | null;
     summary: string;
@@ -97,6 +109,7 @@ export async function getRecentEvents(
       id: row.id,
       companySlug: row.companies?.slug ?? null,
       companyName: row.companies?.canonical_name ?? null,
+      eventCategory: row.event_category,
       eventType: row.event_type,
       eventDate: row.event_date,
       publishedAt: row.published_at,

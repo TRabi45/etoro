@@ -187,6 +187,73 @@ export const FUNDAMENTAL_ARCHETYPES = [
   "team_ip_tuck_in",
 ] as const;
 
+/**
+ * The coarse event vocabulary the Extractor works in.
+ *
+ * Seven categories, because that is what a model reading one article can assign
+ * reliably. Deciding between `license_suspension` and `enforcement` from a
+ * sentence like "the regulator has taken action" is a guess, and a guess stored
+ * in a controlled field is worse than an honest gap.
+ */
+export const EVENT_CATEGORIES = [
+  "acquisition",
+  "funding",
+  "product_launch",
+  "regulatory",
+  "executive",
+  "distress",
+  "other",
+] as const;
+
+/**
+ * The precise subtype, recorded only when the source actually establishes it.
+ *
+ * Every subtype belongs to exactly one category, and the pairing is enforced by
+ * a database CHECK constraint rather than by convention - a row cannot claim to
+ * be a funding event whose subtype is a shutdown.
+ */
+export const EVENT_SUBTYPES_BY_CATEGORY = {
+  acquisition: [
+    "acquisition",
+    "divestiture",
+    "strategic_review",
+    "carve_out",
+    "minority_investment",
+    "change_of_control",
+  ],
+  funding: ["funding", "down_round"],
+  product_launch: ["product_launch", "kpi_change"],
+  regulatory: [
+    "license_grant",
+    "license_application",
+    "license_variation",
+    "license_suspension",
+    "license_withdrawal",
+    "enforcement",
+  ],
+  executive: ["founder_exit"],
+  distress: ["debt_distress", "layoffs", "shutdown"],
+  // The Extractor's vocabulary has no incident category, so incidents carry
+  // their meaning in the subtype rather than the category. The category is a
+  // coarse filter; the subtype is the precise one.
+  other: [
+    "security_incident",
+    "custody_incident",
+    "privacy_incident",
+    "aml_incident",
+    "fraud_incident",
+    "conduct_incident",
+    "other",
+  ],
+} as const satisfies Record<(typeof EVENT_CATEGORIES)[number], readonly string[]>;
+
+/** Which category a subtype belongs to. Derived, so the two cannot drift. */
+export const EVENT_CATEGORY_BY_SUBTYPE = Object.fromEntries(
+  Object.entries(EVENT_SUBTYPES_BY_CATEGORY).flatMap(([category, subtypes]) =>
+    subtypes.map((subtype) => [subtype, category]),
+  ),
+) as Record<(typeof EVENT_TYPES)[number], (typeof EVENT_CATEGORIES)[number]>;
+
 export const EVENT_TYPES = [
   "acquisition",
   "divestiture",
@@ -268,6 +335,7 @@ export type DealStatus = (typeof DEAL_STATUSES)[number];
 export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
 export type FundamentalArchetype = (typeof FUNDAMENTAL_ARCHETYPES)[number];
 export type EventType = (typeof EVENT_TYPES)[number];
+export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 export type MaterialityLevel = (typeof MATERIALITY_LEVELS)[number];
 export type RecommendationState = (typeof RECOMMENDATION_STATES)[number];
 export type AlternativeRoute = (typeof ALTERNATIVE_ROUTES)[number];
