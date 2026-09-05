@@ -1,8 +1,17 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { generateText, stepCountIs, streamText, type ModelMessage } from "ai";
+import { generateObject, generateText, stepCountIs, streamText, type ModelMessage } from "ai";
 import { readAiConfig, type AiConfigResult } from "@/src/ai/config";
 import { agentTools } from "@/src/ai/tools";
 import { repairToolInput } from "@/src/ai/tools/repair";
+import {
+  buildExtractorRequest,
+  EMPTY_EXTRACTION,
+  extractedPayloadSchema,
+  EXTRACTOR_PROMPT_VERSION,
+  EXTRACTOR_SYSTEM_PROMPT,
+  type ExtractedPayload,
+  type ExtractorSourceContext,
+} from "@/src/ai/prompts/v1/extractor";
 import {
   buildConversationalAgentPrompt,
   CONVERSATIONAL_AGENT_PROMPT_VERSION,
@@ -131,6 +140,76 @@ const repairToolCall: NonNullable<Parameters<typeof streamText>[0]["repairToolCa
   }
   return { ...toolCall, input: JSON.stringify(outcome.input) };
 };
+
+export interface ExtractionOutcome {
+  payload: ExtractedPayload;
+  /** Set when the model could not produce a valid payload. */
+  problem: string | null;
+  model: string;
+  promptVersion: string;
+}
+
+/**
+ * Runs the Extractor role over one document.
+ *
+ * Never throws. An extraction that fails - a provider error, output that will
+ * not parse, a page of navigation furniture with nothing in it - costs the run
+ * one source, not the run. The caller records the problem as a warning and moves
+ * to the next document, which is what "one failed source must not abort the run"
+ * requires in practice.
+ *
+ * `generateObject` is used rather than free text plus a parse: the schema is
+ * given to the provider, so malformed output is largely prevented rather than
+ * detected afterwards. It is still validated on return, because prevention that
+ * is not checked is an assumption.
+ */
+export async function extractFromSource(
+  source: ExtractorSourceContext,
+  bodyText: string,
+): Promise<ExtractionOutcome> {
+  const configResult = readAiConfig();
+  if (!configResult.ok) {
+    return {
+      payload: EMPTY_EXTRACTION,
+      problem: configResult.problem.message,
+      model: "unconfigured",
+      promptVersion: EXTRACTOR_PROMPT_VERSION,
+    };
+  }
+
+  const anthropic = createAnthropic({ apiKey: configResult.config.apiKey });
+  const model = configResult.config.model;
+
+  try {
+    const result = await generateObject({
+      model: anthropic(model),
+      schema: extractedPayloadSchema,
+      system: EXTRACTOR_SYSTEM_PROMPT,
+      prompt: buildExtractorRequest(source, bodyText),
+      // One retry, for a transient provider failure. A document that will not
+      // extract twice is a fact about the document.
+      maxRetries: 1,
+      abortSignal: AbortSignal.timeout(EXTRACTION_TIMEOUT_MS),
+    });
+
+    return {
+      payload: result.object,
+      problem: null,
+      model,
+      promptVersion: EXTRACTOR_PROMPT_VERSION,
+    };
+  } catch (cause) {
+    return {
+      payload: EMPTY_EXTRACTION,
+      problem: cause instanceof Error ? cause.message : "extraction failed",
+      model,
+      promptVersion: EXTRACTOR_PROMPT_VERSION,
+    };
+  }
+}
+
+/** A model call that has not returned in this long is not going to help the run. */
+export const EXTRACTION_TIMEOUT_MS = 60_000;
 
 export interface AskAgentResult {
   text: string;
