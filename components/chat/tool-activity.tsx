@@ -1,6 +1,6 @@
 "use client";
 
-import { TOOL_ACTIVITY_LABELS, type AgentToolName } from "@/src/ai/tools";
+import { TOOL_ACTIVITY_LABELS, type AgentToolName } from "@/src/ai/tools/labels";
 
 /**
  * Tool execution states, shown to the user as they happen.

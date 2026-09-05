@@ -68,7 +68,12 @@ describe("company tools", () => {
   });
 
   it("says a company is absent rather than describing it from memory", async () => {
-    const result = await executeGetCompanyProfile({ slug: "stripe" });
+    // The slug is deliberately one no publisher will ever name. This test used
+    // "stripe", which worked until the monitoring pipeline read a real article
+    // about Stripe and added it - at which point the assertion started failing
+    // for the best possible reason. A test for "absent" must not name a company
+    // that could plausibly become present.
+    const result = await executeGetCompanyProfile({ slug: "definitely-not-a-real-company-xyzzy" });
 
     expect(result.ok).toBe(true);
     expect(result.data).toBeNull();
@@ -196,8 +201,10 @@ describe("discovery tools", () => {
   });
 });
 
-describe("stub tools", () => {
-  it("accepts a refresh but states plainly that nothing ran", async () => {
+describe("monitoring from the chat", () => {
+  it("accepts a company refresh but states plainly that nothing ran", async () => {
+    // Still a genuine stub: there is no per-company research pass, only the
+    // feed-driven monitoring run. Saying so is accurate rather than stale.
     const result = await executeRefreshCompany({ slug: "getquin", source_limit: 5 });
 
     expect(result.ok).toBe(true);
@@ -205,12 +212,49 @@ describe("stub tools", () => {
     expect(result.warnings.join(" ")).toMatch(/no sources were fetched/i);
   });
 
-  it("returns zero counts that mean 'nothing ran', not 'nothing found'", async () => {
-    const result = await executeRunMonitoringQuick({ strict_limits: true });
+  it("runs the real pipeline instead of reporting itself unimplemented", async () => {
+    // This tool reported `not_implemented` with zero counts for a whole
+    // milestone after the pipeline behind it started working - the endpoint and
+    // the CLI were wired up and the chat tool was not. An analyst asking the
+    // agent to check for news was told the capability did not exist while the
+    // scheduled job was writing to the same database.
+    //
+    // Fetching is stubbed out so this costs no network and no model call. Every
+    // document therefore fails, which is the point: what is under test is that a
+    // real run happened and reported itself honestly, not what it found.
+    const failingFetch: typeof fetch = async () => {
+      throw new Error("network disabled in test");
+    };
+
+    const result = await executeRunMonitoringQuick(
+      { strict_limits: true },
+      {
+        fetchImpl: failingFetch,
+      },
+    );
 
     expect(result.ok).toBe(true);
-    expect((result.data as { counts: { claimsWritten: number } }).counts.claimsWritten).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/reflect that nothing ran/i);
+
+    const payload = result.data as {
+      runId: string;
+      status: string;
+      counts: Record<string, number>;
+    };
+    // A real run id, from a real row.
+    expect(payload.runId).toMatch(/^[0-9a-f-]{36}$/);
+    // The word that used to be here.
+    expect(JSON.stringify(payload)).not.toMatch(/not_implemented/);
+    expect(result.warnings.join(" ")).not.toMatch(/is a stub|not implemented yet/i);
+    // Nothing could be fetched, and the envelope says so rather than implying
+    // fresh information arrived.
+    expect(payload.status).toBe("partial_success");
+    expect(payload.counts.claimsWritten).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/no new documents were read/i);
+
+    const connection = createServiceClient();
+    if (connection.ok) {
+      await connection.client.from("monitoring_runs").delete().eq("id", payload.runId);
+    }
   });
 });
 

@@ -19,7 +19,9 @@ import { AGENT_TOOL_NAMES, TOOL_ACTIVITY_LABELS } from "@/src/ai/tools";
  */
 describe("tool input schemas", () => {
   it("exposes exactly the nine tools the architecture specifies", () => {
-    expect(AGENT_TOOL_NAMES.sort()).toEqual(
+    // Copied before sorting: the list is now a readonly tuple, and the previous
+    // `.sort()` was mutating the exported array in place.
+    expect([...AGENT_TOOL_NAMES].sort()).toEqual(
       [
         "compare_companies",
         "explain_score",
