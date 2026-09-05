@@ -11,6 +11,7 @@ import {
   executeSearchTargets,
 } from "@/src/ai/tools/executors";
 import { guardTool } from "@/src/ai/tools/envelope";
+import { AGENT_TOOL_NAMES, TOOL_ACTIVITY_LABELS, type AgentToolName } from "@/src/ai/tools/labels";
 import {
   compareCompaniesInputSchema,
   explainScoreInputSchema,
@@ -97,26 +98,27 @@ export const agentTools = {
 
   run_monitoring_quick: tool({
     description:
-      "Start a bounded monitoring run. Currently a stub: it returns zero counts because the pipeline is not implemented yet, which reflects that nothing ran rather than that nothing was found.",
+      "Run a small monitoring pass now: read the configured fintech news feeds, fetch what has not been seen before, extract claims and events, and write them. Returns the counts this run actually produced. It reads whatever the feeds published and cannot be aimed at a topic or a company. It is deliberately tiny - one or two documents - so it fits inside a conversation; the scheduled daily run covers more.",
     inputSchema: runMonitoringQuickInputSchema,
     execute: async (input) =>
       guardTool("run_monitoring_quick", () => executeRunMonitoringQuick(input)),
   }),
 } as const;
 
-export type AgentToolName = keyof typeof agentTools;
+/**
+ * The registry and the UI's name list must agree.
+ *
+ * Names and labels live in `labels.ts`, which imports nothing, so the browser
+ * can read them without pulling this file - and this file's executors - into
+ * the client bundle. These two assignments fail to compile if a tool is added
+ * here and not there, or the reverse.
+ */
+type RegisteredToolName = keyof typeof agentTools;
+const _registryCoversEveryName: Record<AgentToolName, true> = Object.fromEntries(
+  AGENT_TOOL_NAMES.map((name) => [name, true]),
+) as Record<AgentToolName, true>;
+const _namesCoverEveryRegisteredTool: Record<RegisteredToolName, true> =
+  _registryCoversEveryName satisfies Record<RegisteredToolName, true>;
+void _namesCoverEveryRegisteredTool;
 
-export const AGENT_TOOL_NAMES = Object.keys(agentTools) as AgentToolName[];
-
-/** Human-readable labels for the "running a tool" indicator in the chat UI. */
-export const TOOL_ACTIVITY_LABELS: Record<AgentToolName, string> = {
-  search_targets: "Searching monitored targets",
-  get_company_profile: "Fetching company profile",
-  get_company_fundamentals: "Reading fundamentals",
-  compare_companies: "Comparing companies",
-  get_recent_events: "Checking recent events",
-  explain_score: "Retrieving score breakdown",
-  get_market_map: "Building market map",
-  refresh_company: "Queueing company refresh",
-  run_monitoring_quick: "Starting monitoring run",
-};
+export { AGENT_TOOL_NAMES, TOOL_ACTIVITY_LABELS, type AgentToolName };

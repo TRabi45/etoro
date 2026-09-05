@@ -46,7 +46,12 @@ import {
  * come from tools that ran during this request, and from nowhere else.
  */
 
-export const maxDuration = 60;
+/**
+ * Longer than a pure question needs, because `run_monitoring_quick` is now a
+ * real pipeline pass rather than a stub: the agent may spend a fetch and an
+ * extraction inside the turn before it has anything to say.
+ */
+export const maxDuration = 180;
 
 /** Set on the browser once, then presented on every later turn of a session. */
 const OWNER_COOKIE = "ma_chat_owner";

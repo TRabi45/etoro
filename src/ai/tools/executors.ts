@@ -24,6 +24,7 @@ import {
   type CompanyProfileView,
 } from "@/src/db/repositories/company-profile";
 import { getMarketMap, searchTargets, type MarketMap } from "@/src/db/repositories/targets";
+import { runMonitoringPass } from "@/src/research/pipeline/runner";
 
 /**
  * Tool executors.
@@ -461,24 +462,80 @@ export async function executeRefreshCompany(
   );
 }
 
-/** Monitoring stub. Same reasoning as `executeRefreshCompany`. */
+/**
+ * Runs a real monitoring pass from the chat.
+ *
+ * This was a stub through Milestone 3, when there was no pipeline behind it. The
+ * pipeline arrived in Milestone 4 and the stub did not: the endpoint and the CLI
+ * were wired to the real runner while this tool went on reporting
+ * `not_implemented` with zero counts. An analyst asking the agent to check for
+ * news was told the capability did not exist, at the same time as the scheduled
+ * job was writing claims and events into the database behind them. Of every way
+ * a tool can be wrong, telling the user a working feature is missing is among
+ * the worst, because it is unfalsifiable from the chat.
+ *
+ * The run is bounded far more tightly than the HTTP endpoint's, because this one
+ * happens inside a conversation turn: each source costs a fetch plus a model
+ * call, and an analyst waiting on a chat reply will not wait for five of them.
+ */
+export interface RunMonitoringQuickOptions {
+  /**
+   * Injected by tests so the wiring can be exercised without a network or a
+   * paid model call. Production never passes it.
+   */
+  fetchImpl?: typeof fetch;
+}
+
 export async function executeRunMonitoringQuick(
   input: RunMonitoringQuickInput,
+  options: RunMonitoringQuickOptions = {},
 ): Promise<ToolResult<unknown>> {
+  // One source under strict limits, two without. Both are small enough to
+  // finish inside a chat turn; neither is a substitute for the scheduled run.
+  const maxSources = input.strict_limits ? 1 : 2;
+
+  const report = await runMonitoringPass({
+    trigger: "manual",
+    maxSources,
+    // A fresh key every time: the caller asked for a run now, and silently
+    // returning this morning's scheduled run instead would answer a question
+    // they did not ask.
+    idempotencyKey: `chat-${crypto.randomUUID()}`,
+    fetchImpl: options.fetchImpl,
+  });
+
+  const warnings = [...report.warnings];
+  if (input.topic) {
+    // Discovery reads configured feeds; it cannot be pointed at a subject. Say
+    // so rather than accepting the argument and quietly ignoring it, which would
+    // let the agent report a topic-specific result it never ran.
+    warnings.push(
+      `Discovery reads the configured news feeds and cannot be narrowed to "${input.topic}". The run covered whatever those feeds published; it was not a search for that topic.`,
+    );
+  }
+  if (report.sourcesFetched === 0) {
+    warnings.push(
+      "No new documents were read. Either the feeds published nothing new since the last run, or every candidate failed to fetch - the warnings above say which.",
+    );
+  }
+
   return toolSuccess(
     {
-      accepted: true,
-      status: "not_implemented",
-      topic: input.topic ?? null,
-      strictLimits: input.strict_limits,
-      requestedAt: new Date().toISOString(),
-      counts: { sourcesDiscovered: 0, claimsWritten: 0, eventsWritten: 0 },
+      runId: report.runId,
+      status: report.status,
+      counts: {
+        sourcesDiscovered: report.sourcesDiscovered,
+        sourcesSkippedAlreadyStored: report.sourcesSkipped,
+        sourcesFetched: report.sourcesFetched,
+        claimsWritten: report.claimsWritten,
+        eventsWritten: report.eventsWritten,
+        companiesDiscovered: report.companiesDiscovered,
+      },
+      note: "These counts are what this run actually wrote. A status of partial_success means some sources could not be read and the warnings say which; it does not mean the run failed.",
     },
     {
       confidence: "high",
-      warnings: [
-        "This is a stub. The monitoring pipeline is not implemented yet, so the zero counts reflect that nothing ran - not that nothing was found.",
-      ],
+      warnings,
     },
   );
 }
