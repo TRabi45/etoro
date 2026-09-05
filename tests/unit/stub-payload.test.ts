@@ -3,8 +3,8 @@ import { BOOTSTRAP_COMPANIES } from "@/data/seed/bootstrap";
 import { VERTICAL_SLICE_STUB_PAYLOAD } from "@/data/stub/vertical-slice-payload";
 import { SCORING_MODELS_V0_2 } from "@/src/config/scoring/v0-2";
 import { scoreTarget } from "@/src/domain/scoring/engine";
-import { extractionPayloadSchema } from "@/src/pipeline/extraction-payload";
-import { SCORING_POLICY_V0_2 } from "@/src/pipeline/vertical-slice";
+import { extractionPayloadSchema } from "@/src/research/pipeline/extraction-payload";
+import { SCORING_POLICY_V0_2 } from "@/src/research/pipeline/vertical-slice";
 import { GOLD_BENCHMARK_NAMES } from "@/tests/evaluation/gold/gold-benchmark";
 
 /**

@@ -1,4 +1,4 @@
-import type { ExtractionPayload } from "@/src/pipeline/extraction-payload";
+import type { ExtractionPayload } from "@/src/research/pipeline/extraction-payload";
 
 /**
  * A hand-written stand-in for the extraction the Claude adapter will perform in

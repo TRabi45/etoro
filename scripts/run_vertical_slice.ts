@@ -1,7 +1,7 @@
 import { config as loadEnv } from "dotenv";
 import { VERTICAL_SLICE_STUB_PAYLOAD } from "@/data/stub/vertical-slice-payload";
 import { createServiceClient } from "@/src/db/client";
-import { runVerticalSlice } from "@/src/pipeline/vertical-slice";
+import { runVerticalSlice } from "@/src/research/pipeline/vertical-slice";
 
 /**
  * Runs the evidence-backed vertical slice for one bootstrap company.
