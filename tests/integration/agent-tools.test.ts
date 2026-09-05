@@ -1,4 +1,3 @@
-import { config as loadEnv } from "dotenv";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   executeCompareCompanies,
@@ -30,9 +29,6 @@ import {
  * Requires a running local Supabase with the bootstrap seed and the vertical
  * slice applied: pnpm db:start && pnpm db:reset && pnpm db:seed && pnpm slice:run
  */
-
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
 
 beforeAll(async () => {
   const connection = createServiceClient();
@@ -142,30 +138,61 @@ describe("discovery tools", () => {
     expect(result.warnings.join(" ")).toMatch(/geography is not yet recorded/i);
   });
 
-  it("ranks the universe when no filter excludes it", async () => {
+  it("ranks the universe with the scored company first", async () => {
     const result = await executeSearchTargets({ limit: 10 });
     expect(result.ok).toBe(true);
 
     const payload = result.data as { matches: { slug: string; finalScore: number | null }[] };
-    expect(payload.matches.length).toBe(6);
+    // Asserted as a floor, not an exact count. The monitoring pipeline adds
+    // companies as it discovers them, so pinning the size would tie this test
+    // to a moment in the data's life rather than to the behaviour it exists to
+    // protect - which is the ordering.
+    expect(payload.matches.length).toBeGreaterThanOrEqual(6);
     // The scored company ranks first; unscored ones follow rather than vanish.
     expect(payload.matches[0].slug).toBe("getquin");
-    expect(payload.matches.filter((match) => match.finalScore === null).length).toBe(5);
+    expect(payload.matches.filter((match) => match.finalScore === null).length).toBeGreaterThan(0);
   });
 
   it("builds a market map that admits its geography coverage is empty", async () => {
     const result = await executeGetMarketMap({});
     expect(result.ok).toBe(true);
-    expect(result.data?.totalCompanies).toBe(6);
+    expect(result.data?.totalCompanies).toBeGreaterThanOrEqual(6);
+    // Geography stays unpopulated: the extractor records what a document says
+    // about a company, and an article rarely states a headquarters country.
     expect(result.warnings.join(" ")).toMatch(/no recorded headquarters/i);
   });
 
-  it("reports that no events are recorded rather than describing the news", async () => {
+  it("returns recorded events with their sources attached", async () => {
+    // Milestone 3 asserted the opposite - that this returned nothing, because
+    // the events table could only be empty. Milestone 4 fills it, so the
+    // meaningful check moved from "is it empty" to "is what came back usable":
+    // every event carries a category, and any event claiming a source resolves
+    // to a real one.
     const result = await executeGetRecentEvents({ since_date: "2026-01-01", limit: 20 });
-
     expect(result.ok).toBe(true);
-    expect(result.data).toBeNull();
-    expect(result.warnings.join(" ")).toMatch(/not implemented yet|no events are recorded/i);
+
+    if (result.data === null) {
+      // A legitimate state on a database that has never run the pipeline, and
+      // the warning has to say which of the two situations this is.
+      expect(result.warnings.join(" ")).toMatch(/no events are recorded/i);
+      return;
+    }
+
+    const payload = result.data as {
+      events: { eventCategory: string; summary: string; source: { url: string } | null }[];
+    };
+    expect(payload.events.length).toBeGreaterThan(0);
+    for (const event of payload.events) {
+      expect(event.eventCategory).toBeTruthy();
+      expect(event.summary.length).toBeGreaterThan(0);
+      if (event.source) {
+        expect(event.source.url).toMatch(/^https?:\/\//);
+      }
+    }
+    for (const citation of result.citations) {
+      expect(citation.url).toMatch(/^https?:\/\//);
+      expect(citation.index).toBeGreaterThan(0);
+    }
   });
 });
 

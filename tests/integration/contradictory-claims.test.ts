@@ -1,4 +1,3 @@
-import { config as loadEnv } from "dotenv";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServiceClient, type TypedSupabaseClient } from "@/src/db/client";
 import { startAgentRun } from "@/src/db/repositories/agent-runs";
@@ -16,9 +15,6 @@ import { upsertSource } from "@/src/db/repositories/sources";
  * The central question here is the one the whole evidence model rests on: when
  * two sources disagree, does the second write destroy the first? It must not.
  */
-
-loadEnv({ path: ".env.local", quiet: true });
-loadEnv({ quiet: true });
 
 const RUN_TAG = `integration-${Date.now()}`;
 

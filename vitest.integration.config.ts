@@ -15,6 +15,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/integration/**/*.test.ts"],
+    // Credentials are loaded once, for every file. Leaving each test to do it
+    // meant a new file could silently skip it and fail as though the local
+    // database were misconfigured.
+    setupFiles: ["tests/integration/setup.ts"],
     testTimeout: 30_000,
     // Shared database state: these tests must not race each other.
     fileParallelism: false,
