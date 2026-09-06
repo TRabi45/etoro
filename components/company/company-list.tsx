@@ -16,10 +16,10 @@ import type { EnablingLayer, StrategicTheme } from "@/src/config/taxonomy";
  */
 
 const THEME_LABELS: Record<StrategicTheme, string> = {
-  active_trading: "Active trading",
-  wealth_long_term_savings: "Wealth / long-term savings",
-  on_chain_infrastructure: "On-chain infrastructure",
-  money_payments: "Money / payments",
+  trading: "Trading",
+  investing: "Investing",
+  wealth_management: "Wealth Management",
+  neo_banking: "Neo-Banking",
 };
 
 const LAYER_LABELS: Record<EnablingLayer, string> = {

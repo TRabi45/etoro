@@ -204,16 +204,17 @@ describe("the taxonomy conforms to the thesis", () => {
     expect(missing).toEqual([]);
   });
 
-  it.fails("names eToro's four pillars, with AI and blockchain as enablers", () => {
-    // OPEN. Section 3 uses management's own language: Trading, Investing, Wealth
-    // Management, Neo-Banking. The current taxonomy promotes on-chain
-    // infrastructure to a pillar and omits Investing, which changes what the
-    // heaviest dimension in the model - strategic fit, 25 points - measures.
+  it("names eToro's four pillars, with AI and blockchain as enablers", () => {
+    // CLOSED. Section 3 uses management's own language: Trading, Investing,
+    // Wealth Management, Neo-Banking. `strategic_theme` was migrated
+    // (20260906190000_thesis_pillars.sql) and every previously-tagged company
+    // reclassified: three themes renamed directly, and `on_chain_infrastructure`
+    // remapped to the pillar its two holders actually serve (trading), since
+    // section 3 treats blockchain-based finance as a cross-cutting enabler
+    // rather than a pillar of its own.
     //
-    // Closing this means migrating the `strategic_theme` enum and reclassifying
-    // every company already tagged under it, which is a data change rather than
-    // a configuration one. It belongs with the nine target families of section
-    // 10, which are also still missing.
+    // The nine target families of section 10 remain separately missing - out of
+    // this milestone's scope, not silently folded into this assertion.
     expect([...STRATEGIC_THEMES].sort()).toEqual([...THESIS_PILLARS].sort());
   });
 });

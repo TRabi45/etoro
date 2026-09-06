@@ -24,7 +24,7 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
       { alias: "QUIN Technologies GmbH", aliasKind: "legal_entity", isExactLegalEntity: true },
       { alias: "getquin", aliasKind: "brand", isExactLegalEntity: false },
     ],
-    themeTags: ["wealth_long_term_savings"],
+    themeTags: ["wealth_management"],
     enablingLayers: ["ai", "data", "community"],
     searchLeads: [
       { label: "imprint/terms" },
@@ -41,7 +41,11 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
       { alias: "DFNS SAS", aliasKind: "legal_entity", isExactLegalEntity: true },
       { alias: "Dfns", aliasKind: "brand", isExactLegalEntity: false },
     ],
-    themeTags: ["on_chain_infrastructure"],
+    // On-chain infrastructure is a cross-cutting enabler in the thesis (section
+    // 3), not a pillar in its own right. Dfns's wallet and key-management
+    // infrastructure exists to serve trading and custody activity, so that is
+    // the pillar it is tagged under rather than a fifth theme of its own.
+    themeTags: ["trading"],
     enablingLayers: ["none"],
     searchLeads: [
       { label: "legal/privacy" },
@@ -58,7 +62,7 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
       { alias: "Swan SAS", aliasKind: "legal_entity", isExactLegalEntity: true },
       { alias: "Swan", aliasKind: "brand", isExactLegalEntity: false },
     ],
-    themeTags: ["money_payments"],
+    themeTags: ["neo_banking"],
     enablingLayers: ["none"],
     searchLeads: [
       { label: "legal notice" },
@@ -88,7 +92,9 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
       },
       { alias: "Alpaca", aliasKind: "brand", isExactLegalEntity: false },
     ],
-    themeTags: ["active_trading", "on_chain_infrastructure"],
+    // The on-chain half of Alpaca's business is still trading infrastructure,
+    // not a separate pillar (section 3) - one tag, not two.
+    themeTags: ["trading"],
     enablingLayers: ["none"],
     searchLeads: [
       { label: "legal disclosures" },
@@ -112,7 +118,10 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
         notes: "Parent entity perimeter unresolved; not recorded as a legal entity.",
       },
     ],
-    themeTags: ["on_chain_infrastructure"],
+    // Same reasoning as Dfns: on-chain security tooling is an enabler, not a
+    // pillar, and Hypernative's threat detection exists to protect trading and
+    // DeFi activity.
+    themeTags: ["trading"],
     enablingLayers: ["ai", "data"],
     searchLeads: [
       { label: "legal entity confirmation" },
@@ -130,7 +139,7 @@ export const BOOTSTRAP_COMPANIES: readonly BootstrapCompany[] = [
       { alias: "Griffin Bank Ltd", aliasKind: "legal_entity", isExactLegalEntity: true },
       { alias: "Griffin", aliasKind: "brand", isExactLegalEntity: false },
     ],
-    themeTags: ["money_payments"],
+    themeTags: ["neo_banking"],
     enablingLayers: ["none"],
     searchLeads: [
       { label: "FCA/PRA register" },

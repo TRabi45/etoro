@@ -8,12 +8,21 @@
  * enum types created in the initial migration.
  */
 
-/** The four validated strategic themes. Geography is a vector, not a theme. */
+/**
+ * The four validated strategic themes - eToro's own pillar language from
+ * section 3 of `docs/ACQUISITION_THESIS.md`: Trading, Investing, Wealth
+ * Management, Neo-Banking. Geography is a vector, not a theme.
+ *
+ * AI, developer ecosystems and blockchain-based finance are cross-cutting
+ * enablers in the thesis, not pillars - a company built on blockchain
+ * infrastructure is tagged by which of these four it actually serves, the
+ * same as any other company, rather than getting a fifth theme of its own.
+ */
 export const STRATEGIC_THEMES = [
-  "active_trading",
-  "wealth_long_term_savings",
-  "on_chain_infrastructure",
-  "money_payments",
+  "trading",
+  "investing",
+  "wealth_management",
+  "neo_banking",
 ] as const;
 
 /** AI, data and community are a selective enabling layer, not a theme. */

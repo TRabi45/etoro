@@ -1662,10 +1662,10 @@ export type Database = {
         | "trade_press"
         | "other"
       strategic_theme:
-        | "active_trading"
-        | "wealth_long_term_savings"
-        | "on_chain_infrastructure"
-        | "money_payments"
+        | "trading"
+        | "investing"
+        | "wealth_management"
+        | "neo_banking"
       strategic_vector:
         | "geographic_entry"
         | "regulatory_acceleration"
@@ -2005,10 +2005,10 @@ export const Constants = {
         "other",
       ],
       strategic_theme: [
-        "active_trading",
-        "wealth_long_term_savings",
-        "on_chain_infrastructure",
-        "money_payments",
+        "trading",
+        "investing",
+        "wealth_management",
+        "neo_banking",
       ],
       strategic_vector: [
         "geographic_entry",

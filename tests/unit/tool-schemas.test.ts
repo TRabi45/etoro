@@ -46,7 +46,7 @@ describe("tool input schemas", () => {
     it("applies a default limit and accepts controlled filters", () => {
       const parsed = searchTargetsInputSchema.parse({
         geography: "Germany",
-        category: "wealth_long_term_savings",
+        category: "wealth_management",
         path: "tuck_in",
         minimum_score: 70,
       });

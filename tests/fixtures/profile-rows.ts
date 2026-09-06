@@ -157,7 +157,7 @@ export const COMPANY_ROW: RawCompanyRow = {
   slug: "example-co",
   legal_entity_name: "Example Co Ltd",
   primary_domain: "example.com",
-  theme_tags: ["wealth_long_term_savings"],
+  theme_tags: ["wealth_management"],
   enabling_layers: ["ai"],
   updated_at: "2026-09-03T10:00:00.000Z",
 };
