@@ -77,7 +77,7 @@ export const agentTools = {
 
   explain_score: tool({
     description:
-      "Fetch the deterministic score breakdown for a company: normalised positive score, risk and evidence penalties, weighted coverage, final score, per-dimension contributions, the recommendation and the reasons Acquire was ruled out. These numbers are computed in code - explain them, never recalculate or adjust them.",
+      "Fetch the deterministic v0.3 score breakdown for a company: normalized score, coverage, and the lower/upper uncertainty range together (never the score alone), per-dimension contributions, the recommendation, the best and second-best route, and every hard gate's state with which ones are blocking. There is no risk or evidence penalty in this model - coverage is reported beside the score, not subtracted from it. These numbers are computed in code - explain them, never recalculate or adjust them.",
     inputSchema: explainScoreInputSchema,
     execute: async (input) => guardTool("explain_score", () => executeExplainScore(input)),
   }),

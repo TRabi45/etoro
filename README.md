@@ -170,37 +170,49 @@ re-seeding is idempotent.
 
 ## Scoring
 
-Version 0.2 keeps the version 0.1 Platform and Tuck-in weights. Nine historical
-eToro transactions all scored as strong positives under those weights, and that
-sample is too small and too heterogeneous to justify reweighting without
-overfitting. What 0.2 changes is the operations:
+**v0.3 is the sole active scoring model.** It implements section 26 of
+[`docs/ACQUISITION_THESIS.md`](docs/ACQUISITION_THESIS.md) - the eToro
+Acquisition Thesis - as one global weight set. See
+[`docs/adr/0001-v0-3-scoring-is-the-sole-decision-model.md`](docs/adr/0001-v0-3-scoring-is-the-sole-decision-model.md)
+for what superseded v0.2 and why; v0.2 rows already written to the database
+stay exactly as calculated, immutable, and are never selected as the current
+model.
 
 ```text
-positive_normalized = 100 * Σ((dimension_score / 5) * weight) / Σ(scored applicable weights)
-weighted_coverage   = Σ(scored applicable weights) / Σ(all applicable weights)
-final_score         = max(0, positive_normalized - risk_penalty - evidence_penalty)
+contribution(sub-metric) = weight(dimension) * share(sub-metric) * score(sub-metric) / 5
+normalized               = Σ contribution(scored) / Σ weight(scored) * 100
+coverage                 = Σ weight(scored) / Σ weight(applicable)
+lower_bound              = Σ contribution(scored)                        // unknowns score 0
+upper_bound              = Σ contribution(scored) + Σ weight(unknown)    // unknowns score 5
 ```
 
-- `scored`, `unknown` and `not_applicable` are three distinct dimension states.
-  `unknown` stays in the coverage denominator but not the numerator;
-  `not_applicable` leaves both and requires a stated reason.
-- Below 40% weighted coverage, or with an unresolved critical gate, the result is
-  **Research only** and there is no decision score at all.
-- Evidence penalty bands: `>=85% → 0-2`, `70-84% → 3-5`, `55-69% → 6-9`,
-  `40-54% → 10-15`. The penalty is supplied and then validated against the band
-  the coverage actually earned.
-- Risk is an itemised sum capped at 20, and every non-zero component needs a
-  reason.
-- Each hard gate is `clear`, `triggered` or `unresolved`. A triggered permanent
-  gate rules out Acquire; an unresolved critical gate forces Research only.
-- **Recommendation is a separate decision from the score.** Acquire additionally
-  requires no triggered gate, a final score of at least 75, strategic fit of at
-  least 4, coverage of at least 70%, acquisition plausibility of at least 3,
-  resolved legal identity, M&A status and regulatory perimeter, and acquisition
-  beating build, partner, invest and monitor on the recorded route assessment. A
-  high score with a weak control case yields Partner, Invest or Monitor.
-- Genuine Hybrids are scored on both scorecards and both results are kept.
-  They are never averaged.
+- Eight dimensions, weighted 25/15/15/10/10/10/10/5 (strategic fit down to deal
+  feasibility). Each currently carries exactly one sub-metric equal to the
+  whole dimension - the degenerate case, which behaves identically to scoring
+  the dimension directly until family-specific sub-metrics are added.
+- `scored`, `unknown` and `not_applicable` are three distinct states.
+  `unknown` counts toward `applicable` but not `scored`, which is what widens
+  the uncertainty range; `not_applicable` leaves both sides of the ratio, so a
+  measure that does not apply to a business model is never charged as a gap.
+  An unknown criterion is never a zero, and coverage is always reported
+  beside the score - never subtracted from it. There is no risk or evidence
+  penalty in this model.
+- Seven hard gates - entity, regulatory, client-assets, security, integrity,
+  deal, coverage (below 60%) - each `clear`, `triggered` or `unresolved`, and
+  any of them overrides the score. The entity gate alone resolves _before_
+  scoring; a company whose legal identity is unresolved is never scored at
+  all, not scored and then blocked.
+- Recommendation bands: **priority diligence** needs a normalized score of at
+  least 80 _and_ coverage of at least 75% _and_ no unresolved gate; 65-79 is a
+  shortlist/partner/watch range; 50-64 is a conditional watchlist; below that,
+  or below 60% coverage regardless of score, do not advance now.
+- Every score names a best route and a mandatory second-best (build, partner,
+  buy, invest or watch) with `buyBeatsAlternatives` recorded explicitly -
+  never just "buy", with no runner-up.
+- **Platform, Tuck-in and Hybrid are a classification of operating shape, not
+  a second scorecard.** A Hybrid receives the one global score like everything
+  else; the classification is stored on the assessment and rendered
+  separately from the number, never averaged into it.
 - Rounding: full double precision throughout, rounded half-up on output only -
   scores to two decimals, coverage to four.
 

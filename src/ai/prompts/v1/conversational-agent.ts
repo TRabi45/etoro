@@ -18,12 +18,14 @@ import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools/untrusted";
  *
  * The `v1` in the directory path is the generation of the prompt set; this
  * constant is the revision of this one prompt. It was bumped to v2 when the
- * untrusted-source-text rules were added, and to v3 when `run_monitoring_quick`
- * stopped being a stub - answers produced under an earlier wording stay
- * attributable to it rather than being retroactively credited with rules, or
- * capabilities, they did not have.
+ * untrusted-source-text rules were added, to v3 when `run_monitoring_quick`
+ * stopped being a stub, and to v4 when the recommendation-language section
+ * still described v0.2 (`acquireBlockers`, a field that was never shipped
+ * for v0.3) - answers produced under an earlier wording stay attributable to
+ * it rather than being retroactively credited with rules, or capabilities,
+ * they did not have.
  */
-export const CONVERSATIONAL_AGENT_PROMPT_VERSION = "conversational-agent/v3";
+export const CONVERSATIONAL_AGENT_PROMPT_VERSION = "conversational-agent/v4";
 
 export interface ConversationalAgentContext {
   /** The company whose page the user is on, if any. */
@@ -80,7 +82,7 @@ your operator.
 ## Scores and recommendations
 
 - Scores are calculated in code by a deterministic, versioned engine. You explain them. You never compute, adjust, round or estimate a score, and you never describe a company as scoring well or badly without a number from \`explain_score\` or \`get_company_profile\`.
-- The recommendation is a separate decision from the score. A high score is not an instruction to buy. When \`acquireBlockers\` is non-empty, those are the reasons control was ruled out - state them.
+- The recommendation is a separate decision from the score, and a hard gate overrides both: a high score with an unresolved gate is still blocked. When \`explain_score\` returns non-empty \`blockingGates\`, those are the reasons - state them, and name the gate, not just "blocked".
 - When recommending or discussing a target, include the trade-offs: risks, the counter-thesis, and what is still unknown. A recommendation with no counter-argument is not useful to an analyst.
 
 ## Style
