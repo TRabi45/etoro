@@ -13,7 +13,13 @@ import { RepositoryWriteError } from "@/src/db/repositories/result";
  */
 
 export type RunTrigger = "scheduled" | "manual" | "bootstrap";
-export type RunStatus = "running" | "success" | "partial_success" | "failed";
+/**
+ * `blocked` was added for the company-research orchestrator (workstream D) -
+ * a monitoring pass never blocks the way one company's unresolved entity or
+ * hard gate does - but both tables share the one `run_status` enum, so the
+ * type here has to cover every value the column can hold.
+ */
+export type RunStatus = "running" | "success" | "partial_success" | "blocked" | "failed";
 
 export interface MonitoringRunSummary {
   id: string;

@@ -24,6 +24,10 @@ const STATUS_STYLES: Record<MonitoringRunSummary["status"], { label: string; cla
       className: "bg-amber-50 text-amber-900 border-amber-200",
     },
     failed: { label: "Failed", className: "bg-red-50 text-red-800 border-red-200" },
+    // A monitoring pass itself never reaches this state - it exists for the
+    // company-research orchestrator, which shares this status type - but the
+    // map has to be exhaustive regardless of which caller actually uses it.
+    blocked: { label: "Blocked", className: "bg-orange-50 text-orange-800 border-orange-200" },
   };
 
 function formatTimestamp(value: string): string {

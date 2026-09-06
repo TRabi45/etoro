@@ -369,17 +369,27 @@ export type Database = {
           hq_country: string | null
           id: string
           incorporation_country: string | null
+          last_material_change_at: string | null
+          last_researched_at: string | null
           legal_entity_name: string | null
           lifecycle_status: Database["public"]["Enums"]["lifecycle_status"]
           ma_state: Database["public"]["Enums"]["ma_state"] | null
+          next_refresh_at: string | null
           parent_company_id: string | null
           path: Database["public"]["Enums"]["target_path"] | null
           primary_domain: string | null
           record_origin: Database["public"]["Enums"]["record_origin"]
+          research_state: Database["public"]["Enums"]["research_state"]
+          research_tier: Database["public"]["Enums"]["research_tier"]
+          research_tier_confidence:
+            | Database["public"]["Enums"]["confidence_level"]
+            | null
+          research_tier_reason: string | null
           screen_reason: string | null
           screened_at: string | null
           slug: string
           theme_tags: Database["public"]["Enums"]["strategic_theme"][]
+          tier_changed_by_run_id: string | null
           updated_at: string
         }
         Insert: {
@@ -393,17 +403,27 @@ export type Database = {
           hq_country?: string | null
           id?: string
           incorporation_country?: string | null
+          last_material_change_at?: string | null
+          last_researched_at?: string | null
           legal_entity_name?: string | null
           lifecycle_status?: Database["public"]["Enums"]["lifecycle_status"]
           ma_state?: Database["public"]["Enums"]["ma_state"] | null
+          next_refresh_at?: string | null
           parent_company_id?: string | null
           path?: Database["public"]["Enums"]["target_path"] | null
           primary_domain?: string | null
           record_origin: Database["public"]["Enums"]["record_origin"]
+          research_state?: Database["public"]["Enums"]["research_state"]
+          research_tier?: Database["public"]["Enums"]["research_tier"]
+          research_tier_confidence?:
+            | Database["public"]["Enums"]["confidence_level"]
+            | null
+          research_tier_reason?: string | null
           screen_reason?: string | null
           screened_at?: string | null
           slug: string
           theme_tags?: Database["public"]["Enums"]["strategic_theme"][]
+          tier_changed_by_run_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -417,17 +437,27 @@ export type Database = {
           hq_country?: string | null
           id?: string
           incorporation_country?: string | null
+          last_material_change_at?: string | null
+          last_researched_at?: string | null
           legal_entity_name?: string | null
           lifecycle_status?: Database["public"]["Enums"]["lifecycle_status"]
           ma_state?: Database["public"]["Enums"]["ma_state"] | null
+          next_refresh_at?: string | null
           parent_company_id?: string | null
           path?: Database["public"]["Enums"]["target_path"] | null
           primary_domain?: string | null
           record_origin?: Database["public"]["Enums"]["record_origin"]
+          research_state?: Database["public"]["Enums"]["research_state"]
+          research_tier?: Database["public"]["Enums"]["research_tier"]
+          research_tier_confidence?:
+            | Database["public"]["Enums"]["confidence_level"]
+            | null
+          research_tier_reason?: string | null
           screen_reason?: string | null
           screened_at?: string | null
           slug?: string
           theme_tags?: Database["public"]["Enums"]["strategic_theme"][]
+          tier_changed_by_run_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -443,6 +473,13 @@ export type Database = {
             columns: ["parent_company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "companies_tier_changed_by_run_id_fkey"
+            columns: ["tier_changed_by_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -610,6 +647,59 @@ export type Database = {
           },
         ]
       }
+      company_research_runs: {
+        Row: {
+          claims_written: number
+          company_id: string
+          error_summary: string | null
+          finished_at: string | null
+          id: string
+          idempotency_key: string
+          sources_fetched: number
+          sources_planned: number
+          started_at: string
+          status: Database["public"]["Enums"]["run_status"]
+          trigger: Database["public"]["Enums"]["run_trigger"]
+          warnings: string[]
+        }
+        Insert: {
+          claims_written?: number
+          company_id: string
+          error_summary?: string | null
+          finished_at?: string | null
+          id?: string
+          idempotency_key: string
+          sources_fetched?: number
+          sources_planned?: number
+          started_at?: string
+          status?: Database["public"]["Enums"]["run_status"]
+          trigger: Database["public"]["Enums"]["run_trigger"]
+          warnings?: string[]
+        }
+        Update: {
+          claims_written?: number
+          company_id?: string
+          error_summary?: string | null
+          finished_at?: string | null
+          id?: string
+          idempotency_key?: string
+          sources_fetched?: number
+          sources_planned?: number
+          started_at?: string
+          status?: Database["public"]["Enums"]["run_status"]
+          trigger?: Database["public"]["Enums"]["run_trigger"]
+          warnings?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_research_runs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_search_leads: {
         Row: {
           company_id: string
@@ -635,6 +725,54 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "company_search_leads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_tier_transitions: {
+        Row: {
+          agent_run_id: string
+          company_id: string
+          confidence: Database["public"]["Enums"]["confidence_level"] | null
+          created_at: string
+          from_tier: Database["public"]["Enums"]["research_tier"] | null
+          id: string
+          reason: string
+          to_tier: Database["public"]["Enums"]["research_tier"]
+        }
+        Insert: {
+          agent_run_id: string
+          company_id: string
+          confidence?: Database["public"]["Enums"]["confidence_level"] | null
+          created_at?: string
+          from_tier?: Database["public"]["Enums"]["research_tier"] | null
+          id?: string
+          reason: string
+          to_tier: Database["public"]["Enums"]["research_tier"]
+        }
+        Update: {
+          agent_run_id?: string
+          company_id?: string
+          confidence?: Database["public"]["Enums"]["confidence_level"] | null
+          created_at?: string
+          from_tier?: Database["public"]["Enums"]["research_tier"] | null
+          id?: string
+          reason?: string
+          to_tier?: Database["public"]["Enums"]["research_tier"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_tier_transitions_agent_run_id_fkey"
+            columns: ["agent_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_tier_transitions_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -1649,7 +1787,20 @@ export type Database = {
         | "asset_wealth_manager"
         | "pension_super"
         | "unregulated_technology"
-      run_status: "running" | "success" | "partial_success" | "failed"
+      research_state:
+        | "pending"
+        | "running"
+        | "complete"
+        | "partial"
+        | "blocked"
+        | "failed"
+      research_tier: "indexed" | "monitored" | "deep"
+      run_status:
+        | "running"
+        | "success"
+        | "partial_success"
+        | "failed"
+        | "blocked"
       run_trigger: "scheduled" | "manual" | "bootstrap"
       score_state: "scored" | "research_only"
       scoring_route: "build" | "partner" | "buy" | "invest" | "watch"
@@ -1991,7 +2142,22 @@ export const Constants = {
         "pension_super",
         "unregulated_technology",
       ],
-      run_status: ["running", "success", "partial_success", "failed"],
+      research_state: [
+        "pending",
+        "running",
+        "complete",
+        "partial",
+        "blocked",
+        "failed",
+      ],
+      research_tier: ["indexed", "monitored", "deep"],
+      run_status: [
+        "running",
+        "success",
+        "partial_success",
+        "failed",
+        "blocked",
+      ],
       run_trigger: ["scheduled", "manual", "bootstrap"],
       score_state: ["scored", "research_only"],
       scoring_route: ["build", "partner", "buy", "invest", "watch"],
