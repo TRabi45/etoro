@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  HARD_GATES_V0_2,
-  RISK_COMPONENTS_V0_2,
-  SCORING_MODELS_V0_2,
-  SCORING_THRESHOLDS_V0_2,
-} from "@/src/config/scoring/v0-2";
+  HARD_GATES_V0_3,
+  SCORING_THRESHOLDS_V0_3,
+  THESIS_MODEL_V0_3,
+} from "@/src/config/scoring/v0-3";
 import { RECOMMENDATION_STATES, STRATEGIC_THEMES } from "@/src/config/taxonomy";
 import { scoringResultSchema } from "@/src/domain/scoring/types";
 import {
@@ -25,25 +24,22 @@ import {
 /**
  * Conformance of the implementation to `docs/ACQUISITION_THESIS.md`.
  *
- * Written before the engine changes, and expected to fail. That is the point:
- * the acquisition thesis is a business document, and the only honest way to
+ * The acquisition thesis is a business document, and the only honest way to
  * claim the system implements it is to state what it requires in executable
- * terms first, watch the current system disagree, and then close the gap.
+ * terms and check the code against them.
  *
- * The suite has two halves. The first checks the fixtures against the
- * document's own worked arithmetic, so a later failure cannot be blamed on a
- * mis-transcribed weight. Those run normally and must stay green.
+ * The suite has two halves. The first checks the fixtures against the document's
+ * own worked arithmetic, so a failure below cannot be blamed on a mis-transcribed
+ * weight. The second checks the production configuration.
  *
- * The second checks the production configuration and engine against those
- * fixtures, and every one of those is currently `it.fails` - a real assertion,
- * inverted, because the gap it describes is not yet closed. This keeps CI
- * meaningful rather than permanently red, and it ratchets: the moment the engine
- * starts conforming, the inverted test fails for passing unexpectedly, and
- * whoever closed the gap has to remove the marker. A specification gap cannot
- * quietly become satisfied without someone noticing.
+ * A remaining gap is written as `it.fails` - a real assertion, inverted, because
+ * the gap it describes is not yet closed. It ratchets: the moment the code starts
+ * conforming, the inverted test fails for passing unexpectedly, and whoever
+ * closed the gap has to remove the marker. A specification gap cannot quietly
+ * become satisfied without someone noticing.
  *
  * A failure here is a specification gap, never a flaky test. Do not adjust an
- * expectation to make it pass; correct it against the PDF, or change the engine.
+ * expectation to make it pass; correct it against the PDF, or change the code.
  */
 
 describe("the thesis fixtures reproduce the document's own arithmetic", () => {
@@ -57,9 +53,7 @@ describe("the thesis fixtures reproduce the document's own arithmetic", () => {
     // normalized score is 80 with 75% coverage."
     //
     // Reconstructed from dimension scores rather than asserted directly, so the
-    // reference implementation is what is being checked. Strategic fit,
-    // incremental capability, market and financial quality sum to 65 weight;
-    // adding product/technology reaches 75.
+    // reference implementation is what is being checked.
     const result = thesisScore({
       scores: {
         strategic_fit: 4,
@@ -80,9 +74,7 @@ describe("the thesis fixtures reproduce the document's own arithmetic", () => {
   });
 
   it("never turns an unknown criterion into a zero", () => {
-    // Section 26: "An unknown criterion is N/A, not 0 or 3." A dimension nobody
-    // has established must leave the normalized score alone and show up in
-    // coverage instead.
+    // Section 26: "An unknown criterion is N/A, not 0 or 3."
     const everythingKnown = thesisScore({
       scores: Object.fromEntries(THESIS_DIMENSIONS.map((d) => [d.key, 4])),
     });
@@ -100,14 +92,17 @@ describe("the thesis fixtures reproduce the document's own arithmetic", () => {
 
 describe("open question: section 35 coverage against section 26 weights", () => {
   it("records which documented coverage figures the weights cannot produce", () => {
-    // Every dimension weight is a multiple of 5, so coverage can only land on a
-    // multiple of 5%. Four of the five calibration examples do not.
+    // Every dimension weight is a multiple of 5, so dimension-level coverage can
+    // only land on a multiple of 5%. Four of the five calibration examples do
+    // not.
     //
-    // This test documents the finding rather than hiding it. Section 27's
-    // "vary sub-metrics by family" is the likely resolution - coverage measured
-    // across sub-metrics, so a partly evidenced dimension contributes a fraction
-    // of its weight. Until the model owner decides, the arithmetic is recorded
-    // as the document states it.
+    // The engine answers this with sub-metrics: each dimension carries at least
+    // one, and coverage is measured across them, so a partly evidenced dimension
+    // contributes a fraction of its weight. Section 27's "vary sub-metrics by
+    // family" is where the per-archetype evidence requirements of sections 11-19
+    // will live. This test keeps the original inconsistency visible, because the
+    // launch configuration has one sub-metric per dimension and therefore still
+    // produces coverage in steps of 5%.
     const reachable = reachableCoverages();
     const unreachable = CALIBRATION_CASES.filter(
       (testCase) => !reachable.has(testCase.documentedCoverage),
@@ -123,27 +118,16 @@ describe("open question: section 35 coverage against section 26 weights", () => 
 });
 
 describe("the scoring configuration conforms to the thesis", () => {
-  it.fails("publishes one global weight set, not one per path", () => {
-    // Section 26 defines a single model. Section 27 puts family variation in
-    // sub-metrics: "Keep global weights, but vary sub-metrics by family."
-    const configuredPaths = Object.keys(SCORING_MODELS_V0_2);
-    expect(configuredPaths).toEqual([]);
-  });
-
-  it.fails("uses the eight dimensions the thesis specifies", () => {
-    const configured = Object.values(SCORING_MODELS_V0_2).flatMap((model) =>
-      model.dimensions.map((dimension) => dimension.key),
-    );
+  it("uses the eight dimensions the thesis specifies", () => {
+    const configured = THESIS_MODEL_V0_3.dimensions.map((dimension) => dimension.key);
     const expected = THESIS_DIMENSIONS.map((dimension) => dimension.key);
 
-    expect([...new Set(configured)].sort()).toEqual([...expected].sort());
+    expect(configured).toEqual(expected);
   });
 
-  it.fails("weights each dimension as the thesis specifies", () => {
+  it("weights each dimension as the thesis specifies", () => {
     const configured = Object.fromEntries(
-      Object.values(SCORING_MODELS_V0_2).flatMap((model) =>
-        model.dimensions.map((dimension) => [dimension.key, dimension.weight]),
-      ),
+      THESIS_MODEL_V0_3.dimensions.map((dimension) => [dimension.key, dimension.weight]),
     );
     const expected = Object.fromEntries(
       THESIS_DIMENSIONS.map((dimension) => [dimension.key, dimension.weight]),
@@ -152,8 +136,19 @@ describe("the scoring configuration conforms to the thesis", () => {
     expect(configured).toEqual(expected);
   });
 
-  it.fails("carries the thesis decision thresholds", () => {
-    expect(SCORING_THRESHOLDS_V0_2).toMatchObject({
+  it("carries the anchor wording, so a 0-5 score means the same thing twice", () => {
+    // Section 27's anchors are what makes a 4 comparable between two analysts
+    // and between two companies. Shipping the weights without them would leave
+    // the scale undefined.
+    for (const dimension of THESIS_MODEL_V0_3.dimensions) {
+      expect(dimension.anchors.low.length).toBeGreaterThan(0);
+      expect(dimension.anchors.mid.length).toBeGreaterThan(0);
+      expect(dimension.anchors.high.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("carries the thesis decision thresholds", () => {
+    expect(SCORING_THRESHOLDS_V0_3).toMatchObject({
       priorityMinScore: THESIS_THRESHOLDS.priorityMinScore,
       priorityMinCoverage: THESIS_THRESHOLDS.priorityMinCoverage,
       shortlistMinScore: THESIS_THRESHOLDS.shortlistMinScore,
@@ -162,54 +157,63 @@ describe("the scoring configuration conforms to the thesis", () => {
     });
   });
 
-  it.fails("implements all seven hard gates, including client assets and integrity", () => {
-    const configured = HARD_GATES_V0_2.map((gate) => gate.key).sort();
+  it("implements all seven hard gates, including client assets and integrity", () => {
+    const configured = HARD_GATES_V0_3.map((gate) => gate.key).sort();
     const expected = THESIS_GATES.map((gate) => gate.key).sort();
 
     expect(configured).toEqual(expected);
   });
 
-  it.fails("does not subtract risk from the score", () => {
-    // Section 27: a severe regulatory issue "is handled by a gate, not
-    // double-counted without policy". Section 26's model has no risk term at
-    // all; risk lives in the dimension anchors and in the gates.
-    expect(RISK_COMPONENTS_V0_2).toEqual([]);
+  it("orders the entity gate ahead of scoring, and only the entity gate", () => {
+    // Section 28: "Stop; resolve entity before scoring." Every other gate is
+    // evaluated against a score that already exists.
+    const beforeScoring = HARD_GATES_V0_3.filter((gate) => gate.resolveBeforeScoring);
+    expect(beforeScoring.map((gate) => gate.key)).toEqual(["entity"]);
   });
 
-  it.fails("reports coverage beside the score rather than as a penalty", () => {
+  it("reports coverage beside the score rather than as a penalty", () => {
     // Mandatory principle 5: "Never hide missing information inside a score."
-    // Principle 6: "Always display score, coverage and uncertainty together."
     const resultShape = scoringResultSchema.shape;
     expect(Object.keys(resultShape)).not.toContain("evidencePenalty");
     expect(Object.keys(resultShape)).not.toContain("riskPenalty");
+    expect(Object.keys(resultShape)).toContain("coverage");
   });
 
-  it.fails("returns an uncertainty range with every score", () => {
+  it("returns an uncertainty range with every score", () => {
     // Section 26: "A normalized 82 at 55% coverage with a 45-90 range is not
     // '82/100.' Display 82 - 55% coverage - 45-90 range."
     const resultShape = scoringResultSchema.shape;
     expect(Object.keys(resultShape)).toContain("lowerBound");
     expect(Object.keys(resultShape)).toContain("upperBound");
   });
+
+  it("always names the runner-up route", () => {
+    // Section 23: "The agent must always present the second-best route."
+    const resultShape = scoringResultSchema.shape;
+    expect(Object.keys(resultShape)).toContain("bestRoute");
+    expect(Object.keys(resultShape)).toContain("secondBestRoute");
+    expect(Object.keys(resultShape)).toContain("buyBeatsAlternatives");
+  });
 });
 
 describe("the taxonomy conforms to the thesis", () => {
-  it.fails("names eToro's four pillars, with AI and blockchain as enablers", () => {
-    // Section 3 uses management's own language: Trading, Investing, Wealth
-    // Management, Neo-Banking. The current taxonomy promotes on-chain
-    // infrastructure to a pillar and omits Investing, which changes what the
-    // heaviest dimension in the model - strategic fit, 25 points - measures.
-    expect([...STRATEGIC_THEMES].sort()).toEqual([...THESIS_PILLARS].sort());
-  });
-
-  it.fails("offers the six recommendation labels of the output contract", () => {
-    // Section 34's labels are pipeline actions. The current states are routes
-    // (acquire / build / partner / invest / monitor), which section 23 treats as
-    // a separate axis: a label says what to do now, a route says which form of
-    // ownership the evidence supports.
+  it("offers the six recommendation labels of the output contract", () => {
     const missing = THESIS_RECOMMENDATION_LABELS.filter(
       (label) => !(RECOMMENDATION_STATES as readonly string[]).includes(label),
     );
     expect(missing).toEqual([]);
+  });
+
+  it.fails("names eToro's four pillars, with AI and blockchain as enablers", () => {
+    // OPEN. Section 3 uses management's own language: Trading, Investing, Wealth
+    // Management, Neo-Banking. The current taxonomy promotes on-chain
+    // infrastructure to a pillar and omits Investing, which changes what the
+    // heaviest dimension in the model - strategic fit, 25 points - measures.
+    //
+    // Closing this means migrating the `strategic_theme` enum and reclassifying
+    // every company already tagged under it, which is a data change rather than
+    // a configuration one. It belongs with the nine target families of section
+    // 10, which are also still missing.
+    expect([...STRATEGIC_THEMES].sort()).toEqual([...THESIS_PILLARS].sort());
   });
 });

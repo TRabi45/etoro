@@ -6,7 +6,6 @@ import {
   type CanonicalObject,
   type CanonicalValue,
 } from "@/src/domain/canonical-json";
-import type { ScorablePath } from "@/src/config/taxonomy";
 import type { ScoringConfiguration, ScoringPolicy } from "@/src/domain/scoring/types";
 
 /**
@@ -27,17 +26,23 @@ import type { ScoringConfiguration, ScoringPolicy } from "@/src/domain/scoring/t
 export interface EnsureScoringModelInput {
   config: ScoringConfiguration;
   policy: ScoringPolicy;
+  /** Section 27's weight governance: versioned with date, owner and rationale. */
+  governance: { owner: string; rationale: string; thesisVersion: string };
 }
 
 /**
- * The four parts of a configuration that must never change once a score has
- * been written against it, gathered into a comparable shape.
+ * The parts of a configuration that must never change once a score has been
+ * written against it, gathered into a comparable shape.
+ *
+ * The gates are in here as of v0.3. Section 28 makes a gate part of the model
+ * rather than part of the code - "a high score with a hard gate remains
+ * blocked" - so silently redefining one would change what a stored
+ * recommendation meant.
  */
 function shapeOf(input: EnsureScoringModelInput): CanonicalObject {
   return {
     dimensions: toCanonical(input.config.dimensions),
-    riskComponents: toCanonical(input.policy.riskComponents),
-    evidenceBands: toCanonical(input.policy.evidenceBands),
+    hardGates: toCanonical(input.policy.hardGates),
     thresholds: toCanonical(input.policy.thresholds),
   };
 }
@@ -59,14 +64,13 @@ export async function ensureScoringModel(
   client: TypedSupabaseClient,
   input: EnsureScoringModelInput,
 ): Promise<string> {
-  const path: ScorablePath = input.config.path;
   const version = input.config.version;
   const shape = shapeOf(input);
 
   const existing = await client
     .from("scoring_models")
-    .select("id, dimensions, risk_components, evidence_bands, thresholds")
-    .eq("path", path)
+    .select("id, dimensions, hard_gates, thresholds")
+    .is("path", null)
     .eq("version", version)
     .maybeSingle();
 
@@ -77,8 +81,7 @@ export async function ensureScoringModel(
   if (existing.data) {
     const storedShape: CanonicalObject = {
       dimensions: existing.data.dimensions as CanonicalValue,
-      riskComponents: existing.data.risk_components as CanonicalValue,
-      evidenceBands: existing.data.evidence_bands as CanonicalValue,
+      hardGates: existing.data.hard_gates as CanonicalValue,
       thresholds: existing.data.thresholds as CanonicalValue,
     };
 
@@ -86,7 +89,7 @@ export async function ensureScoringModel(
     // the comparison is made on a canonical form rather than raw JSON text.
     if (canonicalJson(storedShape) !== canonicalJson(shape)) {
       throw new RepositoryWriteError(
-        `scoring model ${path}/${version} in the database differs from the configuration in code. ` +
+        `scoring model ${version} in the database differs from the configuration in code. ` +
           `Scores already calculated under this version would stop being reproducible. ` +
           `Publish a new version rather than editing this one.`,
       );
@@ -94,13 +97,13 @@ export async function ensureScoringModel(
     return existing.data.id;
   }
 
-  // Only one configuration per path may be active, so any predecessor is stood
+  // Only one global configuration may be active, so any predecessor is stood
   // down first. Deactivating a locked model is allowed; changing its weights is
   // not.
   const { error: deactivateError } = await client
     .from("scoring_models")
     .update({ is_active: false })
-    .eq("path", path)
+    .is("path", null)
     .eq("is_active", true);
 
   if (deactivateError) {
@@ -112,12 +115,15 @@ export async function ensureScoringModel(
   const { data, error } = await client
     .from("scoring_models")
     .insert({
-      path,
+      // v0.3 is one global model; `path` belonged to the two-scorecard design.
+      path: null,
       version,
       dimensions: toJson(shape.dimensions),
-      risk_components: toJson(shape.riskComponents),
-      evidence_bands: toJson(shape.evidenceBands),
+      hard_gates: toJson(shape.hardGates),
       thresholds: toJson(shape.thresholds),
+      owner: input.governance.owner,
+      rationale: input.governance.rationale,
+      thesis_version: input.governance.thesisVersion,
       is_active: true,
       activated_at: new Date().toISOString(),
     })
@@ -126,7 +132,7 @@ export async function ensureScoringModel(
 
   if (error || !data) {
     throw new RepositoryWriteError(
-      `could not publish scoring model ${path}/${version}: ${error?.message ?? "no row returned"}`,
+      `could not publish scoring model ${version}: ${error?.message ?? "no row returned"}`,
     );
   }
   return data.id;

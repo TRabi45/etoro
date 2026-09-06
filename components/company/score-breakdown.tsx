@@ -3,38 +3,51 @@ import type { ScoreView } from "@/src/db/repositories/company-profile";
 /**
  * The score breakdown.
  *
- * Shows the arithmetic rather than the conclusion: the normalised positive
- * score, each deduction separately, the weighted coverage behind it, and the
- * dimension-by-dimension contributions. An analyst has to be able to disagree
- * with a number here, and they cannot disagree with something they cannot see.
+ * Shows the arithmetic rather than the conclusion. Three numbers are rendered as
+ * one statement and never separated, because the acquisition thesis is explicit
+ * that separating them is a lie: "A normalized 82 at 55% coverage with a 45-90
+ * range is not '82/100.' Display 82 - 55% coverage - 45-90 range."
  *
- * The recommendation is rendered as a separate statement from the score, with
- * the reasons Acquire was ruled out listed explicitly - because a high score is
- * not an instruction to buy, and the blockers are the most decision-relevant
- * thing on the page.
+ * The range is the width of what is still unknown. A target scoring 81 on 85% of
+ * the scorecard sits somewhere between 69 and 84 once the unanswered questions
+ * are settled, and an analyst deciding what to research next needs that spread
+ * more than they need the point estimate.
+ *
+ * The recommendation is a separate statement from the score, with gate status
+ * beside it - a high score with an open gate is still blocked, and the gate is
+ * the more decision-relevant fact.
  */
 
 const RECOMMENDATION_TONE: Record<string, string> = {
+  // Section 34's labels.
+  priority_diligence: "border-emerald-300 bg-emerald-50 text-emerald-900",
+  shortlist: "border-sky-300 bg-sky-50 text-sky-900",
+  partner: "border-sky-300 bg-sky-50 text-sky-900",
+  watch: "border-amber-300 bg-amber-50 text-amber-900",
+  do_not_advance: "border-slate-300 bg-slate-50 text-slate-700",
+  blocked: "border-red-300 bg-red-50 text-red-900",
+  // Retained so a score written under v0.2 still renders.
   acquire: "border-emerald-300 bg-emerald-50 text-emerald-900",
   invest: "border-sky-300 bg-sky-50 text-sky-900",
-  partner: "border-sky-300 bg-sky-50 text-sky-900",
   build: "border-slate-300 bg-slate-50 text-slate-800",
   monitor: "border-amber-300 bg-amber-50 text-amber-900",
   pass: "border-red-300 bg-red-50 text-red-900",
   research_only: "border-amber-300 bg-amber-50 text-amber-900",
 };
 
-function DeductionRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between border-b border-slate-100 py-1.5 last:border-0">
-      <span className="text-slate-600">{label}</span>
-      <span className="font-mono text-slate-900">{value}</span>
-    </div>
-  );
-}
+const GATE_TONE: Record<string, string> = {
+  clear: "text-slate-500",
+  unresolved: "text-amber-700",
+  triggered: "text-red-700",
+};
 
 export function ScoreBreakdown({ score }: { score: ScoreView }) {
-  const isResearchOnly = score.scoreState === "research_only";
+  const unscored = score.normalizedScore === null;
+  const openGates = score.gates.filter((gate) => gate.state !== "clear");
+  const spread =
+    score.lowerBound !== null && score.upperBound !== null
+      ? score.upperBound - score.lowerBound
+      : null;
 
   return (
     <section className="mt-8">
@@ -42,38 +55,45 @@ export function ScoreBreakdown({ score }: { score: ScoreView }) {
         Deterministic score
       </h2>
       <p className="mt-1 text-xs text-slate-500">
-        Calculated in code from the recorded inputs under model version {score.modelVersion} (
-        {score.path.replace(/_/g, "-")} scorecard). No language model produces or adjusts this
-        number.
+        Calculated in code from the recorded inputs under model version {score.modelVersion}. No
+        language model produces or adjusts this number.
       </p>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-sm">
-            <DeductionRow
-              label="Positive score (normalised)"
-              value={score.positiveNormalized === null ? "—" : score.positiveNormalized.toFixed(2)}
-            />
-            <DeductionRow label="Risk deduction" value={`− ${score.riskPenalty.toFixed(2)}`} />
-            <DeductionRow
-              label="Evidence penalty"
-              value={`− ${score.evidencePenalty.toFixed(2)}`}
-            />
-            <DeductionRow
-              label="Weighted evidence coverage"
-              value={`${(score.weightedCoverage * 100).toFixed(2)}%`}
-            />
-          </div>
-
-          <div className="mt-3 flex items-baseline justify-between border-t border-slate-200 pt-3">
-            <span className="text-sm font-semibold text-slate-700">Final score</span>
-            <span className="font-mono text-2xl font-semibold text-slate-900">
-              {isResearchOnly ? "No decision score" : score.finalScore?.toFixed(2)}
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-semibold text-slate-700">Normalised score</span>
+            <span className="font-mono text-3xl font-semibold text-slate-900">
+              {unscored ? "—" : score.normalizedScore?.toFixed(2)}
             </span>
           </div>
-          {isResearchOnly ? (
+
+          <dl className="mt-3 border-t border-slate-200 pt-3 text-sm">
+            <div className="flex items-baseline justify-between py-1.5">
+              <dt className="text-slate-600">Evidence coverage</dt>
+              <dd className="font-mono text-slate-900">{(score.coverage * 100).toFixed(2)}%</dd>
+            </div>
+            <div className="flex items-baseline justify-between py-1.5">
+              <dt className="text-slate-600">Uncertainty range</dt>
+              <dd className="font-mono text-slate-900">
+                {score.lowerBound === null || score.upperBound === null
+                  ? "—"
+                  : `${score.lowerBound.toFixed(2)} – ${score.upperBound.toFixed(2)}`}
+              </dd>
+            </div>
+          </dl>
+
+          {spread !== null && spread > 0 ? (
+            <p className="mt-2 text-xs leading-relaxed text-amber-700">
+              {spread.toFixed(0)} points of the scorecard are still unestablished. The lower bound
+              assumes every unknown scores zero, the upper bound assumes every unknown scores five.
+              Neither is a prediction.
+            </p>
+          ) : null}
+
+          {unscored ? (
             <p className="mt-2 text-xs text-amber-700">
-              Evidence coverage is below the floor, or a critical gate is unresolved. Research only.
+              Nothing on the scorecard could be scored from the recorded evidence.
             </p>
           ) : null}
         </div>
@@ -82,27 +102,51 @@ export function ScoreBreakdown({ score }: { score: ScoreView }) {
           <p className="text-sm font-semibold text-slate-700">Recommended action</p>
           <p
             className={`mt-2 inline-block rounded-full border px-3 py-1 text-sm font-semibold capitalize ${
-              RECOMMENDATION_TONE[score.recommendation] ?? RECOMMENDATION_TONE.monitor
+              RECOMMENDATION_TONE[score.recommendation] ?? RECOMMENDATION_TONE.watch
             }`}
           >
             {score.recommendation.replace(/_/g, " ")}
           </p>
-          <p className="mt-3 text-xs leading-relaxed text-slate-600">
-            The action is a separate decision from the score. A strong fit score does not by itself
-            justify acquiring control.
-          </p>
 
-          {score.acquireBlockers.length > 0 ? (
+          {score.bestRoute ? (
+            <p className="mt-3 text-xs leading-relaxed text-slate-600">
+              The evidence supports <strong className="text-slate-800">{score.bestRoute}</strong>
+              {score.secondBestRoute ? (
+                <>
+                  , with <strong className="text-slate-800">{score.secondBestRoute}</strong> as the
+                  next-best route
+                </>
+              ) : null}
+              .{" "}
+              {score.buyBeatsAlternatives === false
+                ? "Acquiring control does not beat the alternatives on the recorded assessment."
+                : "Acquiring control outscores every alternative on the recorded assessment."}
+            </p>
+          ) : (
+            <p className="mt-3 text-xs leading-relaxed text-slate-600">
+              The action is a separate decision from the score. A strong fit score does not by
+              itself justify acquiring control.
+            </p>
+          )}
+
+          {openGates.length > 0 ? (
             <div className="mt-3 border-t border-slate-200 pt-3">
-              <p className="text-xs font-semibold text-slate-700">Acquire is ruled out because:</p>
+              <p className="text-xs font-semibold text-slate-700">Gates needing attention</p>
               <ul className="mt-1.5 space-y-1">
-                {score.acquireBlockers.map((blocker) => (
-                  <li key={blocker} className="text-xs leading-relaxed text-slate-600">
-                    • {blocker}
+                {openGates.map((gate) => (
+                  <li key={gate.key} className="text-xs leading-relaxed">
+                    <span className={`font-medium ${GATE_TONE[gate.state]}`}>
+                      {gate.label} — {gate.state}
+                    </span>
+                    <span className="text-slate-600"> · {gate.action}</span>
                   </li>
                 ))}
               </ul>
             </div>
+          ) : score.gates.length > 0 ? (
+            <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500">
+              All {score.gates.length} decision gates are clear.
+            </p>
           ) : null}
         </div>
       </div>
@@ -127,7 +171,7 @@ export function ScoreBreakdown({ score }: { score: ScoreView }) {
                     {/* An unscored dimension is never shown as a zero: unknown
                         stays in the coverage denominator, not-applicable leaves
                         the calculation entirely, and both say so by name. */}
-                    {row.status === "scored" ? (
+                    {row.status === "scored" || row.status === "partially_scored" ? (
                       <span className="font-mono text-slate-900">{row.score}</span>
                     ) : row.status === "unknown" ? (
                       <span className="text-xs font-medium text-amber-700">Unknown</span>
@@ -136,7 +180,7 @@ export function ScoreBreakdown({ score }: { score: ScoreView }) {
                     )}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
-                    {row.weightedContribution === null ? "—" : row.weightedContribution.toFixed(2)}
+                    {row.contribution === null ? "—" : row.contribution.toFixed(2)}
                   </td>
                 </tr>
               ))}

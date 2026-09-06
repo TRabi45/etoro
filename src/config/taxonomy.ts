@@ -287,6 +287,18 @@ export const EVENT_TYPES = [
 /** How consequential an event is, used to rank what an analyst sees first. */
 export const MATERIALITY_LEVELS = ["low", "medium", "high"] as const;
 
+/**
+ * Every value the `recommendation_state` enum holds, in declaration order.
+ *
+ * Two vocabularies live here, because the `scores` table holds rows from two
+ * models. The first five are v0.2's routes. The last five, with `partner`
+ * shared between them, are section 34's recommendation labels - actions to take
+ * rather than forms of ownership, which section 23 keeps as a separate axis.
+ *
+ * The old values are not removed. A stored score has to keep meaning what it
+ * meant when it was written, and a Postgres enum cannot drop a value that rows
+ * still reference.
+ */
 export const RECOMMENDATION_STATES = [
   "acquire",
   "invest",
@@ -295,6 +307,11 @@ export const RECOMMENDATION_STATES = [
   "monitor",
   "pass",
   "research_only",
+  "priority_diligence",
+  "shortlist",
+  "watch",
+  "do_not_advance",
+  "blocked",
 ] as const;
 
 /** The routes an acquisition is measured against before Acquire is allowed. */

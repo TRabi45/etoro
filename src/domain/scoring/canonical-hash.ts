@@ -1,44 +1,41 @@
 import { createHash } from "node:crypto";
-import {
-  canonicalize,
-  type CanonicalObject,
-  type CanonicalValue,
-} from "@/src/domain/canonical-json";
+import { canonicalize, type CanonicalObject } from "@/src/domain/canonical-json";
 import type { ScoringInput } from "@/src/domain/scoring/types";
 
 /**
- * Deterministic input hashing for scores.
+ * A stable fingerprint of the inputs a score was calculated from.
  *
- * A stored score must be reproducible, and the system must be able to tell
- * whether a recalculation actually used different inputs. The hash is taken over
- * a canonical form of the *material* inputs only:
+ * Two jobs. A stored score must be reproducible, and the system must be able to
+ * tell whether a recalculation used different inputs or merely ran again - which
+ * is what keeps `scores` from filling with identical rows every time the
+ * pipeline touches a company.
  *
- *   - included: path, subtype, every dimension status and score, every risk
- *     component value, the evidence penalty, every hard-gate state, the
- *     resolution flags, and the route-assessment scores;
- *   - excluded: all free text (reasons, evidence notes, analyst notes) and all
- *     timestamps.
+ * ## What is hashed
  *
- * The split is deliberate. Rewording a justification does not change the
- * arithmetic, so it must not create a new score row; changing a number or a
- * state does, so it must. Object key order is normalised, so two payloads that
- * differ only in how they were assembled hash identically.
+ * Every value that changes the arithmetic: each sub-metric's status and, when
+ * scored, its score; each hard gate's state; each route's score. Nothing else.
+ *
+ * ## What is not, and why
+ *
+ * All free text - the reason behind a sub-metric score, the evidence behind a
+ * gate, the rationale for a route, the analyst's notes. Rewording a
+ * justification does not change the number, so it must not create a new score
+ * row. Changing a number or a state does, so it must.
+ *
+ * Timestamps are excluded for the same reason: when a score was calculated is a
+ * fact about the run, not about the inputs.
+ *
+ * Object key order is normalised before hashing, so two payloads that differ
+ * only in how they were assembled produce the same digest.
  */
-
-/** Strips explanatory text, keeping only what the calculation depends on. */
-export function buildCanonicalScoringPayload(input: ScoringInput): CanonicalObject {
-  const dimensions: CanonicalObject = {};
-  for (const key of Object.keys(input.dimensions).sort()) {
-    const dimension = input.dimensions[key];
-    dimensions[key] =
-      dimension.status === "scored"
-        ? { status: dimension.status, score: dimension.score }
-        : { status: dimension.status };
-  }
-
-  const risk: CanonicalObject = {};
-  for (const key of Object.keys(input.risk).sort()) {
-    risk[key] = { value: input.risk[key].value };
+export function hashScoringInput(input: ScoringInput): string {
+  const subMetrics: CanonicalObject = {};
+  for (const key of Object.keys(input.subMetrics).sort()) {
+    const supplied = input.subMetrics[key];
+    subMetrics[key] =
+      supplied.status === "scored"
+        ? { status: supplied.status, score: supplied.score ?? null }
+        : { status: supplied.status };
   }
 
   const hardGates: CanonicalObject = {};
@@ -46,32 +43,14 @@ export function buildCanonicalScoringPayload(input: ScoringInput): CanonicalObje
     hardGates[key] = { state: input.hardGates[key].state };
   }
 
-  const payload: CanonicalValue = {
-    path: input.path,
-    subtype: input.subtype ?? null,
-    dimensions,
-    risk,
-    evidencePenalty: input.evidencePenalty,
-    hardGates,
-    resolution: {
-      legalIdentity: input.resolution.legalIdentity,
-      maStatus: input.resolution.maStatus,
-      regulatoryPerimeter: input.resolution.regulatoryPerimeter,
-    },
-    routeAssessment: {
-      acquire: input.routeAssessment.acquire.score,
-      build: input.routeAssessment.build.score,
-      partner: input.routeAssessment.partner.score,
-      invest: input.routeAssessment.invest.score,
-      monitor: input.routeAssessment.monitor.score,
-    },
-  };
+  const routes: CanonicalObject = {};
+  for (const key of Object.keys(input.routes).sort()) {
+    const route = input.routes[key as keyof typeof input.routes];
+    if (route) {
+      routes[key] = { score: route.score };
+    }
+  }
 
-  return canonicalize(payload) as CanonicalObject;
-}
-
-/** SHA-256 of the canonical payload, hex encoded. */
-export function hashScoringInput(input: ScoringInput): string {
-  const payload = buildCanonicalScoringPayload(input);
+  const payload = canonicalize({ subMetrics, hardGates, routes });
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }

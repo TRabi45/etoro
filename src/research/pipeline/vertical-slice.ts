@@ -9,15 +9,12 @@ import { insertScore } from "@/src/db/repositories/scores";
 import { ensureScoringModel } from "@/src/db/repositories/scoring-models";
 import { upsertSource } from "@/src/db/repositories/sources";
 import {
-  EVIDENCE_BANDS_V0_2,
-  HARD_GATES_V0_2,
-  RISK_COMPONENTS_V0_2,
-  RISK_PENALTY_CAP,
-  SCORING_MODELS_V0_2,
-  SCORING_THRESHOLDS_V0_2,
-} from "@/src/config/scoring/v0-2";
+  SCORING_MODEL_GOVERNANCE,
+  SCORING_POLICY_V0_3,
+  THESIS_MODEL_V0_3,
+} from "@/src/config/scoring/v0-3";
 import { scoreTarget } from "@/src/domain/scoring/engine";
-import type { ScoringPolicy, ScoringResult } from "@/src/domain/scoring/types";
+import type { ScoringResult } from "@/src/domain/scoring/types";
 import {
   extractionPayloadSchema,
   type ExtractionPayload,
@@ -43,14 +40,6 @@ import {
  *   3. fundamentals carry the coverage the engine actually calculated, rather
  *      than a separately-guessed number that could contradict the score.
  */
-
-export const SCORING_POLICY_V0_2: ScoringPolicy = {
-  riskComponents: [...RISK_COMPONENTS_V0_2],
-  riskPenaltyCap: RISK_PENALTY_CAP,
-  evidenceBands: [...EVIDENCE_BANDS_V0_2],
-  hardGates: [...HARD_GATES_V0_2],
-  thresholds: { ...SCORING_THRESHOLDS_V0_2 },
-};
 
 export interface VerticalSliceSummary {
   companySlug: string;
@@ -97,14 +86,12 @@ export async function runVerticalSlice(
   const companyId = company.data.id;
 
   // The scorecard is chosen by the assessed path. A Hybrid would need two
-  // scorecards and two persisted results, which is out of scope here.
-  if (payload.scoring.path === "platform" && payload.assessment.path === "tuck_in") {
-    throw new RepositoryWriteError("scoring path and assessed path disagree");
-  }
-  const config = SCORING_MODELS_V0_2[payload.scoring.path];
-
   // Pure, and first: a payload that cannot be scored writes nothing at all.
-  const result = scoreTarget({ config, policy: SCORING_POLICY_V0_2, input: payload.scoring });
+  const result = scoreTarget({
+    config: THESIS_MODEL_V0_3,
+    policy: SCORING_POLICY_V0_3,
+    input: payload.scoring,
+  });
 
   const agentRunId = await startAgentRun(client, {
     purpose:
@@ -209,7 +196,7 @@ export async function runVerticalSlice(
       // The coverage the engine actually calculated, so the fundamentals
       // section and the score can never disagree about how well evidenced
       // this company is.
-      evidenceCoverage: result.weightedCoverage,
+      evidenceCoverage: result.coverage,
       agentRunId,
       claimLinks: payload.fundamentals.claimLinks.map((link) => ({
         claimId: resolveClaim(link.claimKey),
@@ -228,7 +215,7 @@ export async function runVerticalSlice(
       risks: payload.assessment.risks,
       counterThesis: payload.assessment.counterThesis,
       unknowns: payload.assessment.unknowns,
-      routeAssessment: payload.scoring.routeAssessment,
+      routeAssessment: payload.scoring.routes,
       agentRunId,
       claimLinks: payload.assessment.claimLinks.map((link) => ({
         claimId: resolveClaim(link.claimKey),
@@ -237,8 +224,9 @@ export async function runVerticalSlice(
     });
 
     const scoringModelId = await ensureScoringModel(client, {
-      config,
-      policy: SCORING_POLICY_V0_2,
+      config: THESIS_MODEL_V0_3,
+      policy: SCORING_POLICY_V0_3,
+      governance: SCORING_MODEL_GOVERNANCE,
     });
 
     const { scoreId, created } = await insertScore(client, {

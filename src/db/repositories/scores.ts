@@ -50,25 +50,32 @@ export async function insertScore(
       company_id: companyId,
       scoring_model_id: scoringModelId,
       model_version: result.modelVersion,
-      path: result.path,
-      // The exact inputs and the breakdown they produced, kept together so the
+      // v0.3 has one global model, so a score is no longer filed under a path.
+      path: null,
+      // The exact inputs and everything derived from them, kept together so the
       // stored number can be re-derived without the pipeline that made it.
-      input_snapshot: toJson({
-        input,
-        breakdown: result.breakdown,
-        acquireBlockers: result.acquireBlockers,
-        triggeredPermanentGates: result.triggeredPermanentGates,
-        unresolvedCriticalGates: result.unresolvedCriticalGates,
-        subtype: result.subtype,
-      }),
+      input_snapshot: toJson({ input, breakdown: result.breakdown }),
       input_hash: result.inputHash,
-      positive_normalized: result.positiveNormalized,
-      risk_penalty: result.riskPenalty,
-      evidence_penalty: result.evidencePenalty,
-      weighted_coverage: result.weightedCoverage,
-      final_score: result.finalScore,
-      score_state: result.scoreState,
+      // With no penalties in the model, the normalised score *is* the final
+      // score. Both columns are written so a reader who knows only one of them
+      // still gets the right number.
+      positive_normalized: result.normalizedScore,
+      final_score: result.normalizedScore,
+      lower_bound: result.lowerBound,
+      upper_bound: result.upperBound,
+      weighted_coverage: result.coverage,
+      // NULL rather than zero. v0.3 has no risk or evidence penalty at all, and
+      // section 30's rule applies to this table too: a concept that does not
+      // exist is not the same as one measured at zero.
+      risk_penalty: null,
+      evidence_penalty: null,
+      score_state: result.normalizedScore === null ? "research_only" : "scored",
       recommendation: result.recommendation,
+      best_route: result.bestRoute,
+      second_best_route: result.secondBestRoute,
+      buy_beats_alternatives: result.buyBeatsAlternatives,
+      gates: toJson(result.gates),
+      blocking_gates: result.blockingGates,
       agent_run_id: agentRunId,
     })
     .select("id")

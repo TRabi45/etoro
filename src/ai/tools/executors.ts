@@ -43,7 +43,7 @@ import { runMonitoringPass } from "@/src/research/pipeline/runner";
 
 /** Confidence follows the evidence, so the model cannot inflate it. */
 function confidenceFromProfile(profile: CompanyProfileView): "low" | "medium" | "high" {
-  const coverage = profile.score?.weightedCoverage ?? null;
+  const coverage = profile.score?.coverage ?? null;
   if (coverage === null) {
     return "low";
   }
@@ -255,12 +255,16 @@ export async function executeCompareCompanies(
     themeTags: profile.company.themeTags,
     path: profile.path,
     hasResearch: profile.hasResearch,
-    finalScore: profile.score?.finalScore ?? null,
-    positiveNormalized: profile.score?.positiveNormalized ?? null,
-    riskPenalty: profile.score?.riskPenalty ?? null,
-    evidencePenalty: profile.score?.evidencePenalty ?? null,
-    weightedCoverage: profile.score?.weightedCoverage ?? null,
+    // Section 26 keeps these three together. A caller that reads only the score
+    // is reading a number whose meaning depends on the other two.
+    normalizedScore: profile.score?.normalizedScore ?? null,
+    coverage: profile.score?.coverage ?? null,
+    scoreRange:
+      profile.score?.lowerBound === null || profile.score?.lowerBound === undefined
+        ? null
+        : { lower: profile.score.lowerBound, upper: profile.score.upperBound },
     recommendation: profile.score?.recommendation ?? null,
+    bestRoute: profile.score?.bestRoute ?? null,
     metrics: Object.fromEntries(
       profile.metrics.map((metric) => [
         metric.metricType,
@@ -381,19 +385,23 @@ export async function executeExplainScore(input: ExplainScoreInput): Promise<Too
     {
       company: profile.company,
       modelVersion: score.modelVersion,
-      path: score.path,
       // The arithmetic, exactly as the deterministic engine produced it.
       calculation: {
-        positiveNormalized: score.positiveNormalized,
-        riskPenalty: score.riskPenalty,
-        evidencePenalty: score.evidencePenalty,
-        weightedCoverage: score.weightedCoverage,
-        finalScore: score.finalScore,
-        formula: "final_score = max(0, positive_normalized - risk_penalty - evidence_penalty)",
+        normalizedScore: score.normalizedScore,
+        coverage: score.coverage,
+        lowerBound: score.lowerBound,
+        upperBound: score.upperBound,
+        formula:
+          "normalized = sum(weight * score / 5) over scored dimensions / sum(scored weight) * 100; coverage = scored weight / applicable weight; bounds assume every unknown scores 0, then 5",
       },
-      scoreState: score.scoreState,
       recommendation: score.recommendation,
-      acquireBlockers: score.acquireBlockers,
+      routes: {
+        best: score.bestRoute,
+        secondBest: score.secondBestRoute,
+        buyBeatsAlternatives: score.buyBeatsAlternatives,
+      },
+      gates: score.gates,
+      blockingGates: score.blockingGates,
       breakdown: score.breakdown,
       calculatedAt: score.calculatedAt,
       note: "These numbers were computed in code, not by a language model. Explain them; never recompute, adjust or round them differently.",

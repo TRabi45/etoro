@@ -102,14 +102,29 @@ describe("company tools", () => {
     expect(result.ok).toBe(true);
 
     const payload = result.data as {
-      calculation: { finalScore: number; positiveNormalized: number };
+      calculation: {
+        normalizedScore: number;
+        coverage: number;
+        lowerBound: number;
+        upperBound: number;
+      };
       recommendation: string;
-      acquireBlockers: string[];
+      routes: { best: string; secondBest: string; buyBeatsAlternatives: boolean };
+      gates: { key: string; state: string }[];
     };
-    expect(payload.calculation.finalScore).toBe(73.78);
-    expect(payload.calculation.positiveNormalized).toBe(79.78);
+
+    // The three numbers section 26 requires the agent to report together.
+    expect(payload.calculation.normalizedScore).toBe(81.18);
+    expect(payload.calculation.coverage).toBe(0.85);
+    expect(payload.calculation.lowerBound).toBe(69);
+    expect(payload.calculation.upperBound).toBe(84);
+
+    // A strong score that is still not an acquisition, because partnership
+    // outscores control on the recorded route assessment.
     expect(payload.recommendation).toBe("partner");
-    expect(payload.acquireBlockers.length).toBeGreaterThan(0);
+    expect(payload.routes.best).toBe("partner");
+    expect(payload.routes.buyBeatsAlternatives).toBe(false);
+    expect(payload.gates.find((gate) => gate.key === "regulatory")?.state).toBe("unresolved");
   });
 
   it("refuses a comparison when fewer than two companies exist", async () => {
@@ -124,11 +139,13 @@ describe("company tools", () => {
     const result = await executeCompareCompanies({ slugs: ["getquin", "dfns"] });
     expect(result.ok).toBe(true);
 
-    const payload = result.data as { companies: { slug: string; finalScore: number | null }[] };
+    const payload = result.data as {
+      companies: { slug: string; normalizedScore: number | null }[];
+    };
     expect(payload.companies).toHaveLength(2);
     // Dfns has no assessment; its blank score must read as "not researched".
     expect(result.warnings.join(" ")).toMatch(/no assessment exists/i);
-    expect(payload.companies.find((row) => row.slug === "dfns")?.finalScore).toBeNull();
+    expect(payload.companies.find((row) => row.slug === "dfns")?.normalizedScore).toBeNull();
   });
 });
 
@@ -147,7 +164,7 @@ describe("discovery tools", () => {
     const result = await executeSearchTargets({ limit: 10 });
     expect(result.ok).toBe(true);
 
-    const payload = result.data as { matches: { slug: string; finalScore: number | null }[] };
+    const payload = result.data as { matches: { slug: string; normalizedScore: number | null }[] };
     // Asserted as a floor, not an exact count. The monitoring pipeline adds
     // companies as it discovers them, so pinning the size would tie this test
     // to a moment in the data's life rather than to the behaviour it exists to
@@ -155,7 +172,9 @@ describe("discovery tools", () => {
     expect(payload.matches.length).toBeGreaterThanOrEqual(6);
     // The scored company ranks first; unscored ones follow rather than vanish.
     expect(payload.matches[0].slug).toBe("getquin");
-    expect(payload.matches.filter((match) => match.finalScore === null).length).toBeGreaterThan(0);
+    expect(
+      payload.matches.filter((match) => match.normalizedScore === null).length,
+    ).toBeGreaterThan(0);
   });
 
   it("builds a market map that admits its geography coverage is empty", async () => {

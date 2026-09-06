@@ -1,18 +1,19 @@
-import { ALTERNATIVE_ROUTES } from "@/src/config/taxonomy";
 import { hashScoringInput } from "@/src/domain/scoring/canonical-hash";
 import { ScoringConfigurationError, ScoringInputError } from "@/src/domain/scoring/errors";
 import {
   scoringConfigurationSchema,
   scoringInputSchema,
   scoringPolicySchema,
-  type AlternativeRouteName,
+  type GateOutcome,
+  type RecommendationLabel,
+  type RouteName,
   type ScoreBreakdownEntry,
   type ScoringConfiguration,
   type ScoringInput,
   type ScoringPolicy,
   type ScoringResult,
+  type SubMetricBreakdownEntry,
 } from "@/src/domain/scoring/types";
-import type { RecommendationState } from "@/src/config/taxonomy";
 
 /**
  * The deterministic scoring engine.
@@ -21,26 +22,33 @@ import type { RecommendationState } from "@/src/config/taxonomy";
  * call. A language model may propose the structured inputs and may write the
  * narrative afterwards, but the number itself is produced here and nowhere else.
  *
- * Version 0.2 operations:
+ * Version 0.3 implements section 26 of `docs/ACQUISITION_THESIS.md`:
  *
- *   positive_normalized = 100 * Σ((score / 5) * weight) / Σ(scored applicable weights)
- *   weighted_coverage   = Σ(scored applicable weights) / Σ(all applicable weights)
- *   final_score         = max(0, positive_normalized - risk_penalty - evidence_penalty)
+ *   contribution(s)  = weight(dimension) * share(s) * score(s) / 5
+ *   normalized       = Σ contribution(scored) / Σ weight(scored) * 100
+ *   coverage         = Σ weight(scored) / Σ weight(applicable)
+ *   lower_bound      = Σ contribution(scored)              // unknowns score 0
+ *   upper_bound      = Σ contribution(scored) + Σ weight(unknown)   // unknowns score 5
  *
- * Normalising over *scored* weight rather than total weight is the point of the
- * formula: a private company that never published its revenue is not scored as
- * though its revenue were zero. The cost of that missing evidence is charged
- * separately and visibly, through weighted coverage and the evidence penalty.
+ * Normalising over *scored* weight rather than total weight is the whole point:
+ * a private company that never published its revenue is not scored as though its
+ * revenue were zero. What that costs is reported next to the score as coverage
+ * and as the width of the range - never subtracted from the score itself, which
+ * mandatory principle 5 forbids in as many words.
+ *
+ * `not_applicable` leaves both sides of the ratio. A measure that does not apply
+ * to a business model is not a gap in the evidence about that company, and
+ * charging it as one would penalise a wallet for having no assets under
+ * management.
  *
  * Rounding convention: all arithmetic runs at full double precision and is
  * rounded only on the way out - scores to two decimal places, coverage to four -
- * using half-up rounding. `final_score` is derived from the rounded
- * `positive_normalized` so that the published numbers always reconcile.
+ * using half-up rounding.
  */
 
 const SCORE_DECIMALS = 2;
 const COVERAGE_DECIMALS = 4;
-const MAX_DIMENSION_SCORE = 5;
+const MAX_SUB_METRIC_SCORE = 5;
 
 /**
  * Half-up rounding. Every value passed here is non-negative by construction,
@@ -57,370 +65,367 @@ export interface ScoreTargetArgs {
   input: ScoringInput;
 }
 
-function parseConfiguration(config: ScoringConfiguration) {
+function parseConfiguration(config: ScoringConfiguration): ScoringConfiguration {
   const parsed = scoringConfigurationSchema.safeParse(config);
   if (!parsed.success) {
-    throw new ScoringConfigurationError(
-      `invalid scoring configuration: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
-    );
+    throw new ScoringConfigurationError(`invalid scoring configuration: ${parsed.error.message}`);
   }
   return parsed.data;
 }
 
-function parsePolicy(policy: ScoringPolicy) {
+function parsePolicy(policy: ScoringPolicy): ScoringPolicy {
   const parsed = scoringPolicySchema.safeParse(policy);
   if (!parsed.success) {
-    throw new ScoringConfigurationError(
-      `invalid scoring policy: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
-    );
+    throw new ScoringConfigurationError(`invalid scoring policy: ${parsed.error.message}`);
   }
   return parsed.data;
 }
 
-function parseInput(input: ScoringInput) {
+function parseInput(input: ScoringInput): ScoringInput {
   const parsed = scoringInputSchema.safeParse(input);
   if (!parsed.success) {
-    throw new ScoringInputError(
-      `invalid scoring input: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`,
-    );
+    throw new ScoringInputError(`invalid scoring input: ${parsed.error.message}`);
   }
   return parsed.data;
-}
-
-/** Every key in the model must be supplied exactly once, and nothing extra. */
-function assertKeysMatch(expected: string[], provided: string[], label: string): void {
-  const missing = expected.filter((key) => !provided.includes(key));
-  const unexpected = provided.filter((key) => !expected.includes(key));
-  if (missing.length > 0) {
-    throw new ScoringInputError(`missing ${label}: ${missing.join(", ")}`);
-  }
-  if (unexpected.length > 0) {
-    throw new ScoringInputError(`unknown ${label}: ${unexpected.join(", ")}`);
-  }
-}
-
-/** Returns the highest-scoring alternative to acquisition, deterministically. */
-function bestAlternativeRoute(input: ScoringInput): {
-  route: AlternativeRouteName;
-  score: number;
-} {
-  let best: { route: AlternativeRouteName; score: number } = {
-    route: ALTERNATIVE_ROUTES[0],
-    score: input.routeAssessment[ALTERNATIVE_ROUTES[0]].score,
-  };
-  // Iterating the frozen route order makes ties resolve the same way every run.
-  for (const route of ALTERNATIVE_ROUTES) {
-    const score = input.routeAssessment[route].score;
-    if (score > best.score) {
-      best = { route, score };
-    }
-  }
-  return best;
-}
-
-export function scoreTarget({ config, policy, input }: ScoreTargetArgs): ScoringResult {
-  const model = parseConfiguration(config);
-  const rules = parsePolicy(policy);
-  const scoringInput = parseInput(input);
-
-  if (scoringInput.path !== model.path) {
-    throw new ScoringInputError(
-      `input path ${scoringInput.path} does not match model path ${model.path}`,
-    );
-  }
-
-  // The regulated-access subtype re-anchors Tuck-in dimensions. It has no
-  // meaning for a Platform scorecard.
-  const subtype = scoringInput.subtype ?? null;
-  if (subtype === "regulated_access" && model.path !== "tuck_in") {
-    throw new ScoringInputError("the regulated_access subtype applies to Tuck-in targets only");
-  }
-
-  const dimensionKeys = model.dimensions.map((dimension) => dimension.key);
-  assertKeysMatch(dimensionKeys, Object.keys(scoringInput.dimensions), "scoring dimensions");
-  assertKeysMatch(
-    rules.riskComponents.map((component) => component.key),
-    Object.keys(scoringInput.risk),
-    "risk components",
-  );
-  assertKeysMatch(
-    rules.hardGates.map((gate) => gate.key),
-    Object.keys(scoringInput.hardGates),
-    "hard gates",
-  );
-
-  // --- Risk ---------------------------------------------------------------
-  let riskTotal = 0;
-  for (const component of rules.riskComponents) {
-    const supplied = scoringInput.risk[component.key];
-    if (supplied.value > component.max) {
-      throw new ScoringInputError(
-        `risk component ${component.key} is ${supplied.value}, above its maximum of ${component.max}`,
-      );
-    }
-    // A deduction without a stated reason is not reviewable, so it is rejected
-    // rather than quietly accepted.
-    if (supplied.value > 0 && (supplied.reason === undefined || supplied.reason.trim() === "")) {
-      throw new ScoringInputError(`risk component ${component.key} is non-zero but has no reason`);
-    }
-    riskTotal += supplied.value;
-  }
-  if (riskTotal > rules.riskPenaltyCap) {
-    riskTotal = rules.riskPenaltyCap;
-  }
-  const riskPenalty = roundHalfUp(riskTotal, SCORE_DECIMALS);
-
-  // --- Coverage and positive score ---------------------------------------
-  let applicableWeight = 0;
-  let scoredWeight = 0;
-  let weightedScoreSum = 0;
-  const breakdown: ScoreBreakdownEntry[] = [];
-
-  for (const dimension of model.dimensions) {
-    const supplied = scoringInput.dimensions[dimension.key];
-    const label =
-      subtype === "regulated_access" && dimension.regulatedAccessLabel
-        ? dimension.regulatedAccessLabel
-        : dimension.label;
-
-    if (supplied.status === "not_applicable") {
-      // Leaves both the numerator and the denominator entirely.
-      breakdown.push({
-        key: dimension.key,
-        label,
-        weight: dimension.weight,
-        status: supplied.status,
-        score: null,
-        weightedContribution: null,
-      });
-      continue;
-    }
-
-    applicableWeight += dimension.weight;
-
-    if (supplied.status === "unknown") {
-      // Stays in the denominator, contributes nothing to the numerator.
-      breakdown.push({
-        key: dimension.key,
-        label,
-        weight: dimension.weight,
-        status: supplied.status,
-        score: null,
-        weightedContribution: null,
-      });
-      continue;
-    }
-
-    scoredWeight += dimension.weight;
-    const contribution = (supplied.score / MAX_DIMENSION_SCORE) * dimension.weight;
-    weightedScoreSum += contribution;
-    breakdown.push({
-      key: dimension.key,
-      label,
-      weight: dimension.weight,
-      status: supplied.status,
-      score: supplied.score,
-      weightedContribution: roundHalfUp(contribution, SCORE_DECIMALS),
-    });
-  }
-
-  if (applicableWeight === 0) {
-    throw new ScoringInputError("every dimension is marked not_applicable, so nothing is scorable");
-  }
-
-  const rawCoverage = scoredWeight / applicableWeight;
-  const weightedCoverage = roundHalfUp(rawCoverage, COVERAGE_DECIMALS);
-  const rawPositive = scoredWeight === 0 ? null : (100 * weightedScoreSum) / scoredWeight;
-  const positiveNormalized = rawPositive === null ? null : roundHalfUp(rawPositive, SCORE_DECIMALS);
-
-  // --- Hard gates ---------------------------------------------------------
-  const triggeredGates: string[] = [];
-  const triggeredPermanentGates: string[] = [];
-  const unresolvedCriticalGates: string[] = [];
-  const unresolvedGates: string[] = [];
-
-  for (const gate of rules.hardGates) {
-    const supplied = scoringInput.hardGates[gate.key];
-    if (supplied.state === "triggered") {
-      triggeredGates.push(gate.key);
-      if (gate.permanent) {
-        triggeredPermanentGates.push(gate.key);
-      }
-    }
-    if (supplied.state === "unresolved") {
-      unresolvedGates.push(gate.key);
-      // Only a *critical* unresolved gate suppresses the score entirely. The
-      // rest still have to block Acquire - see the blocker below.
-      if (gate.critical) {
-        unresolvedCriticalGates.push(gate.key);
-      }
-    }
-  }
-
-  // --- Evidence penalty ---------------------------------------------------
-  const belowCoverageFloor = weightedCoverage < rules.thresholds.researchOnlyCoverageFloor;
-  const band = rules.evidenceBands.find(
-    (candidate) =>
-      weightedCoverage >= candidate.minCoverage &&
-      (weightedCoverage < candidate.maxCoverage || candidate.maxCoverage >= 1),
-  );
-
-  if (!belowCoverageFloor) {
-    if (!band) {
-      throw new ScoringConfigurationError(
-        `no evidence band covers a weighted coverage of ${weightedCoverage}`,
-      );
-    }
-    // The penalty is supplied, not guessed - but it must belong to the band the
-    // evidence actually earned, or the deduction is not defensible.
-    if (
-      scoringInput.evidencePenalty < band.minPenalty ||
-      scoringInput.evidencePenalty > band.maxPenalty
-    ) {
-      throw new ScoringInputError(
-        `evidence penalty ${scoringInput.evidencePenalty} is outside the ${band.minPenalty}-${band.maxPenalty} band for coverage ${weightedCoverage}`,
-      );
-    }
-  }
-  const evidencePenalty = roundHalfUp(scoringInput.evidencePenalty, SCORE_DECIMALS);
-
-  // --- State --------------------------------------------------------------
-  // Sparse evidence or an unresolved critical gate means there is no decision
-  // score to publish. Research only is an answer, not a low score.
-  const researchOnly =
-    belowCoverageFloor || unresolvedCriticalGates.length > 0 || positiveNormalized === null;
-
-  const finalScore = researchOnly
-    ? null
-    : roundHalfUp(
-        Math.max(0, (positiveNormalized as number) - riskPenalty - evidencePenalty),
-        SCORE_DECIMALS,
-      );
-
-  // --- Acquire eligibility ------------------------------------------------
-  const strategicFit = scoringInput.dimensions[model.strategicFitDimension];
-  const plausibility = scoringInput.dimensions[model.acquisitionPlausibilityDimension];
-  const alternative = bestAlternativeRoute(scoringInput);
-  const acquireBlockers: string[] = [];
-
-  if (researchOnly) {
-    acquireBlockers.push("no decision score: research only");
-  }
-  if (triggeredGates.length > 0) {
-    acquireBlockers.push(`hard gate triggered: ${triggeredGates.join(", ")}`);
-  }
-  // An unresolved gate is an open question, and an open question is not a pass.
-  // Only critical gates force Research only, so before this check a non-critical
-  // unresolved gate - `strategic_contradiction` is the one in v0.2 - was counted
-  // neither as triggered nor as critical and therefore vanished: "we have not
-  // established whether this contradicts the strategy" was treated exactly like
-  // "it does not". Acquire is the one recommendation that cannot be walked back
-  // cheaply, so it has to clear every gate explicitly.
-  if (unresolvedGates.length > 0) {
-    acquireBlockers.push(`hard gate unresolved: ${unresolvedGates.join(", ")}`);
-  }
-  if (finalScore !== null && finalScore < rules.thresholds.acquireMinFinalScore) {
-    acquireBlockers.push(
-      `final score ${finalScore} is below ${rules.thresholds.acquireMinFinalScore}`,
-    );
-  }
-  if (strategicFit.status !== "scored") {
-    acquireBlockers.push(`strategic fit is ${strategicFit.status}`);
-  } else if (strategicFit.score < rules.thresholds.acquireMinStrategicFit) {
-    acquireBlockers.push(
-      `strategic fit ${strategicFit.score} is below ${rules.thresholds.acquireMinStrategicFit}`,
-    );
-  }
-  if (weightedCoverage < rules.thresholds.acquireMinCoverage) {
-    acquireBlockers.push(
-      `weighted coverage ${weightedCoverage} is below ${rules.thresholds.acquireMinCoverage}`,
-    );
-  }
-  if (plausibility.status !== "scored") {
-    acquireBlockers.push(`acquisition plausibility is ${plausibility.status}`);
-  } else if (plausibility.score < rules.thresholds.acquireMinAcquisitionPlausibility) {
-    acquireBlockers.push(
-      `acquisition plausibility ${plausibility.score} is below ${rules.thresholds.acquireMinAcquisitionPlausibility}`,
-    );
-  }
-  const unresolved = Object.entries(scoringInput.resolution)
-    .filter(([, state]) => state === "unresolved")
-    .map(([field]) => field);
-  if (unresolved.length > 0) {
-    acquireBlockers.push(`unresolved: ${unresolved.join(", ")}`);
-  }
-  // Control has to win on its merits. A high fit score is not a mandate to buy.
-  if (scoringInput.routeAssessment.acquire.score <= alternative.score) {
-    acquireBlockers.push(
-      `acquisition does not beat ${alternative.route} on the recorded route assessment`,
-    );
-  }
-
-  const acquireEligible = acquireBlockers.length === 0;
-
-  // --- Recommendation -----------------------------------------------------
-  // Deliberately a separate decision from the score. The order below is the
-  // decision table: gates, then permanent disqualifiers, then Acquire, then the
-  // strongest remaining route.
-  let recommendation: RecommendationState;
-  if (researchOnly) {
-    recommendation = "research_only";
-  } else if (triggeredPermanentGates.length > 0) {
-    recommendation = "pass";
-  } else if (strategicFit.status === "scored" && strategicFit.score < 3) {
-    recommendation = "pass";
-  } else if (acquireEligible) {
-    recommendation = "acquire";
-  } else if (
-    finalScore !== null &&
-    finalScore < rules.thresholds.monitorMinFinalScore &&
-    alternative.score < 3
-  ) {
-    recommendation = "pass";
-  } else {
-    recommendation = alternative.route;
-  }
-
-  return {
-    modelVersion: model.version,
-    path: model.path,
-    subtype,
-    positiveNormalized: researchOnly ? null : positiveNormalized,
-    weightedCoverage,
-    riskPenalty,
-    evidencePenalty,
-    finalScore,
-    scoreState: researchOnly ? "research_only" : "scored",
-    recommendation,
-    acquireEligible,
-    acquireBlockers,
-    triggeredPermanentGates,
-    unresolvedCriticalGates,
-    breakdown,
-    inputHash: hashScoringInput(scoringInput),
-  };
 }
 
 /**
- * Genuine Hybrid targets are scored twice and both results are kept.
+ * Section 23, made a precondition rather than a suggestion.
  *
- * Averaging them would destroy the very thing the dual score exists to show.
- * Gatsby is the historical proof: its Tuck-in view scored more than ten points
- * above its Platform view, because what eToro actually bought was options
- * technology and speed to market, not a standalone franchise. An average would
- * have hidden that.
+ * "The agent must always present the second-best route. If there is no
+ * alternative, the thesis may be defined too narrowly or research may be
+ * incomplete." Ties resolve to the earlier entry in a fixed order so two
+ * identical inputs always rank identically.
  */
-export function scoreHybridTarget(args: { platform: ScoreTargetArgs; tuckIn: ScoreTargetArgs }): {
-  platform: ScoringResult;
-  tuckIn: ScoringResult;
-} {
-  if (args.platform.input.path !== "platform" || args.tuckIn.input.path !== "tuck_in") {
+const ROUTE_ORDER: readonly RouteName[] = ["build", "partner", "buy", "invest", "watch"];
+
+function rankRoutes(input: ScoringInput): { best: RouteName; second: RouteName } {
+  const ranked = [...ROUTE_ORDER].sort((left, right) => {
+    const difference = (input.routes[right]?.score ?? 0) - (input.routes[left]?.score ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+    return ROUTE_ORDER.indexOf(left) - ROUTE_ORDER.indexOf(right);
+  });
+  return { best: ranked[0], second: ranked[1] };
+}
+
+interface DimensionTotals {
+  breakdown: ScoreBreakdownEntry[];
+  scoredWeight: number;
+  applicableWeight: number;
+  unknownWeight: number;
+  contribution: number;
+}
+
+function computeDimensions(config: ScoringConfiguration, input: ScoringInput): DimensionTotals {
+  const breakdown: ScoreBreakdownEntry[] = [];
+  let scoredWeight = 0;
+  let applicableWeight = 0;
+  let unknownWeight = 0;
+  let contribution = 0;
+
+  for (const dimension of config.dimensions) {
+    const subMetrics: SubMetricBreakdownEntry[] = [];
+    let dimensionScoredWeight = 0;
+    let dimensionApplicableWeight = 0;
+    let dimensionContribution = 0;
+    let anyUnknown = false;
+
+    for (const subMetric of dimension.subMetrics) {
+      const supplied = input.subMetrics[subMetric.key];
+      if (!supplied) {
+        throw new ScoringInputError(`no input supplied for sub-metric "${subMetric.key}"`);
+      }
+
+      const weight = dimension.weight * subMetric.share;
+
+      if (supplied.status === "not_applicable") {
+        subMetrics.push({
+          key: subMetric.key,
+          label: subMetric.label,
+          weight,
+          status: "not_applicable",
+          score: null,
+          contribution: null,
+        });
+        continue;
+      }
+
+      dimensionApplicableWeight += weight;
+      applicableWeight += weight;
+
+      if (supplied.status === "unknown") {
+        anyUnknown = true;
+        unknownWeight += weight;
+        subMetrics.push({
+          key: subMetric.key,
+          label: subMetric.label,
+          weight,
+          status: "unknown",
+          score: null,
+          contribution: null,
+        });
+        continue;
+      }
+
+      // `score` is present because the input schema refuses a scored sub-metric
+      // without one; the assertion is for the type system, not for safety.
+      const score = supplied.score as number;
+      const subContribution = (weight * score) / MAX_SUB_METRIC_SCORE;
+
+      dimensionScoredWeight += weight;
+      dimensionContribution += subContribution;
+      scoredWeight += weight;
+      contribution += subContribution;
+
+      subMetrics.push({
+        key: subMetric.key,
+        label: subMetric.label,
+        weight,
+        status: "scored",
+        score,
+        contribution: roundHalfUp(subContribution, SCORE_DECIMALS),
+      });
+    }
+
+    const status: ScoreBreakdownEntry["status"] =
+      dimensionApplicableWeight === 0
+        ? "not_applicable"
+        : dimensionScoredWeight === 0
+          ? "unknown"
+          : anyUnknown
+            ? "partially_scored"
+            : "scored";
+
+    breakdown.push({
+      key: dimension.key,
+      label: dimension.label,
+      weight: dimension.weight,
+      status,
+      // Reported back on the 0-5 anchor scale the analyst supplied, so a
+      // dimension row reads the same way it was scored.
+      score:
+        dimensionScoredWeight === 0
+          ? null
+          : roundHalfUp(
+              (dimensionContribution / dimensionScoredWeight) * MAX_SUB_METRIC_SCORE,
+              SCORE_DECIMALS,
+            ),
+      contribution:
+        dimensionScoredWeight === 0 ? null : roundHalfUp(dimensionContribution, SCORE_DECIMALS),
+      subMetrics,
+    });
+  }
+
+  return { breakdown, scoredWeight, applicableWeight, unknownWeight, contribution };
+}
+
+/**
+ * Section 28 and section 34, as one decision.
+ *
+ * The order matters and is the document's, not a convenience. A triggered gate
+ * blocks whatever the score says - DeltaCustody in section 35 is 74 points of
+ * good wallet fit and still `blocked`. An *unresolved* gate does not block; it
+ * denies Priority and leaves the target on a shortlist pending review, which is
+ * exactly BetaOptions. Only then do the score bands apply.
+ */
+export interface RecommendationArgs {
+  normalizedScore: number | null;
+  coverage: number;
+  policy: ScoringPolicy;
+  triggeredGates: readonly string[];
+  unresolvedGates: readonly string[];
+  bestRoute: RouteName;
+}
+
+/**
+ * Exported so section 35's five calibration companies can be checked directly.
+ *
+ * Those examples give a score, a coverage figure, a gate state and the verdict
+ * each must produce - and the document is explicit that they "demonstrate
+ * correct model behavior", not correct arithmetic. Testing them through a
+ * constructed set of dimension scores would test the construction; testing them
+ * here tests the decision the business actually specified.
+ *
+ * The order of the checks below is the document's, not a convenience:
+ *
+ * 1. A *triggered* gate blocks whatever the score says. DeltaCustody is 74
+ *    points of good wallet fit and still blocked.
+ * 2. A low score stops the target regardless of which route looks best. There is
+ *    no route worth taking into a company that does not fit.
+ * 3. **The route outranks the score band.** Section 23 and mandatory principle 8
+ *    require buy to be compared against build, partner, invest and watch, and
+ *    "a company should not be recommended for acquisition when the same
+ *    capability can be obtained faster or more efficiently through internal
+ *    development or partnership". A strong fit that partnering serves better is
+ *    a partnership, not a shortlisted acquisition - however high it scores.
+ * 4. Only then do section 26's bands apply. An *unresolved* gate does not block;
+ *    it denies Priority and leaves the target on a shortlist pending review,
+ *    which is exactly BetaOptions. The coverage gate is the one exception:
+ *    section 28 gives it its own consequence, "Research only; no shortlist".
+ */
+export function decideRecommendation(args: RecommendationArgs): RecommendationLabel {
+  const { normalizedScore, coverage, policy, triggeredGates, unresolvedGates, bestRoute } = args;
+
+  if (triggeredGates.length > 0) {
+    return "blocked";
+  }
+
+  if (normalizedScore === null) {
+    // Nothing was scored at all. Section 38: a research gap is a manageable
+    // output "provided it is not hidden inside a score".
+    return "watch";
+  }
+
+  if (normalizedScore < policy.thresholds.conditionalWatchlistMinScore) {
+    return "do_not_advance";
+  }
+
+  if (bestRoute !== "buy") {
+    // Build, invest and watch all mean "not an acquisition now", and section 34
+    // has no label for the first two. Partner is a route the analyst can act on,
+    // so it keeps its own label.
+    return bestRoute === "partner" ? "partner" : "watch";
+  }
+
+  if (normalizedScore < policy.thresholds.shortlistMinScore) {
+    // Section 26's 50-64 band: a conditional watchlist, never a shortlist.
+    return "watch";
+  }
+
+  const priorityEligible =
+    normalizedScore >= policy.thresholds.priorityMinScore &&
+    coverage >= policy.thresholds.priorityMinCoverage &&
+    unresolvedGates.length === 0;
+
+  if (priorityEligible) {
+    return "priority_diligence";
+  }
+
+  if (unresolvedGates.includes("coverage")) {
+    // Section 28's coverage gate: "Research only; no shortlist." Thin evidence
+    // does not become a shortlist by scoring well on the little that is known.
+    return "watch";
+  }
+
+  return "shortlist";
+}
+
+/**
+ * Scores one target against one model.
+ *
+ * Throws on a malformed configuration or input rather than returning a
+ * degraded score. A number nobody can reproduce is worse than no number.
+ */
+export function scoreTarget({ config, policy, input }: ScoreTargetArgs): ScoringResult {
+  const scoringConfig = parseConfiguration(config);
+  const scoringPolicy = parsePolicy(policy);
+  const scoringInput = parseInput(input);
+
+  // Section 28 orders the entity gate ahead of the score: "Stop; resolve entity
+  // before scoring." Checked first, and separately, because everything below
+  // this line describes a company whose identity is settled.
+  const gates: GateOutcome[] = [];
+  const triggeredGates: string[] = [];
+  const unresolvedGates: string[] = [];
+
+  for (const gate of scoringPolicy.hardGates) {
+    const supplied = scoringInput.hardGates[gate.key];
+    if (!supplied) {
+      throw new ScoringInputError(`no state supplied for hard gate "${gate.key}"`);
+    }
+    gates.push({ key: gate.key, label: gate.label, state: supplied.state, action: gate.action });
+
+    if (supplied.state === "triggered") {
+      triggeredGates.push(gate.key);
+    }
+    if (supplied.state === "unresolved") {
+      unresolvedGates.push(gate.key);
+    }
+
+    if (gate.resolveBeforeScoring && supplied.state !== "clear") {
+      const routes = rankRoutes(scoringInput);
+      return {
+        modelVersion: scoringConfig.version,
+        normalizedScore: null,
+        coverage: 0,
+        lowerBound: null,
+        upperBound: null,
+        recommendation: "blocked",
+        bestRoute: routes.best,
+        secondBestRoute: routes.second,
+        buyBeatsAlternatives: false,
+        gates,
+        blockingGates: [gate.key],
+        breakdown: [],
+        inputHash: hashScoringInput(scoringInput),
+      };
+    }
+  }
+
+  const totals = computeDimensions(scoringConfig, scoringInput);
+
+  if (totals.applicableWeight === 0) {
     throw new ScoringInputError(
-      "a hybrid assessment requires one platform input and one tuck_in input",
+      "every dimension is marked not applicable, which leaves nothing to score",
     );
   }
+
+  const coverage = roundHalfUp(totals.scoredWeight / totals.applicableWeight, COVERAGE_DECIMALS);
+  const normalizedScore =
+    totals.scoredWeight === 0
+      ? null
+      : roundHalfUp((totals.contribution / totals.scoredWeight) * 100, SCORE_DECIMALS);
+
+  // Section 26: "Range: lower if missing=0; upper if missing=5." The bounds are
+  // absolute points out of 100, not a normalisation - that is what makes the
+  // width of the range read as the size of the unanswered question.
+  const lowerBound = roundHalfUp(totals.contribution, SCORE_DECIMALS);
+  const upperBound = roundHalfUp(totals.contribution + totals.unknownWeight, SCORE_DECIMALS);
+
+  const belowCoverageGate = coverage < scoringPolicy.thresholds.coverageGateFloor;
+  if (belowCoverageGate && !unresolvedGates.includes("coverage")) {
+    // The coverage gate is the one gate the engine can evaluate itself, because
+    // coverage is something it computes rather than something research reports.
+    unresolvedGates.push("coverage");
+    const outcome = gates.find((gate) => gate.key === "coverage");
+    if (outcome) {
+      outcome.state = "unresolved";
+    }
+  }
+
+  const routes = rankRoutes(scoringInput);
+  const buyScore = scoringInput.routes.buy?.score ?? 0;
+  const bestAlternativeScore = Math.max(
+    ...ROUTE_ORDER.filter((route) => route !== "buy").map(
+      (route) => scoringInput.routes[route]?.score ?? 0,
+    ),
+  );
+
   return {
-    platform: scoreTarget(args.platform),
-    tuckIn: scoreTarget(args.tuckIn),
+    modelVersion: scoringConfig.version,
+    normalizedScore,
+    coverage,
+    lowerBound,
+    upperBound,
+    recommendation: decideRecommendation({
+      normalizedScore,
+      coverage,
+      policy: scoringPolicy,
+      triggeredGates,
+      unresolvedGates,
+      bestRoute: routes.best,
+    }),
+    bestRoute: routes.best,
+    secondBestRoute: routes.second,
+    // Strict domination. An equal score is not a reason to take control, and
+    // section 23 asks for the second-best route precisely so that ties are
+    // visible rather than resolved in favour of buying.
+    buyBeatsAlternatives: buyScore > bestAlternativeScore,
+    gates,
+    blockingGates: [...triggeredGates],
+    breakdown: totals.breakdown,
+    inputHash: hashScoringInput(scoringInput),
   };
 }

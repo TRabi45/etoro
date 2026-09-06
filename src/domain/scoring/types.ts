@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { ALTERNATIVE_ROUTES, RECOMMENDATION_STATES, SCORABLE_PATHS } from "@/src/config/taxonomy";
 
 /**
  * Runtime schemas for the deterministic scoring engine, and the TypeScript types
@@ -7,43 +6,69 @@ import { ALTERNATIVE_ROUTES, RECOMMENDATION_STATES, SCORABLE_PATHS } from "@/src
  *
  * Types are derived from the schemas rather than declared alongside them, so a
  * validated value and its compile-time type cannot drift apart.
+ *
+ * The shapes here follow `docs/ACQUISITION_THESIS.md` section 26. Three things
+ * that were in v0.2 are deliberately absent, and their absence is the point:
+ *
+ * - **No risk penalty.** Section 27: a severe issue "is handled by a gate, not
+ *   double-counted without policy". Risk lives in the dimension anchors and in
+ *   the seven gates.
+ * - **No evidence penalty.** Mandatory principle 5: "never hide missing
+ *   information inside a score." Coverage is returned beside the score.
+ * - **No path.** Section 26 specifies one global weight set; section 27 puts
+ *   family variation in sub-metrics.
  */
 
-/** A dimension key is a stable identifier, not a display label. */
-const dimensionKeySchema = z
+/** A key is a stable identifier, not a display label. */
+const keySchema = z
   .string()
   .min(1)
-  .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, "dimension keys are lower_snake_case");
+  .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, "keys are lower_snake_case");
+
+/** Section 27 gives anchor wording for 0-1, 3 and 5. */
+export const scoringAnchorsSchema = z.object({
+  low: z.string().min(1),
+  mid: z.string().min(1),
+  high: z.string().min(1),
+});
+
+/**
+ * A sub-metric: the thing that is actually scored.
+ *
+ * `share` is the fraction of its dimension's weight that this sub-metric
+ * carries, and the shares within a dimension must total 1. That is what lets
+ * coverage be finer-grained than the dimension weights - section 35's examples
+ * require 88%, 81%, 72% and 76% coverage, none of which a set of weights that
+ * are all multiples of five can produce on its own.
+ */
+export const scoringSubMetricSchema = z.object({
+  key: keySchema,
+  label: z.string().min(1),
+  share: z.number().positive().max(1),
+});
 
 export const scoringDimensionSchema = z.object({
-  key: dimensionKeySchema,
+  key: keySchema,
   label: z.string().min(1),
   weight: z.number().positive().max(100),
-  /**
-   * Alternative anchor wording for the regulated-access/customer-book subtype.
-   * The subtype reinterprets what a dimension means; it never changes its
-   * weight, which is why this is only a label.
-   */
-  regulatedAccessLabel: z.string().min(1).optional(),
+  anchors: scoringAnchorsSchema,
+  subMetrics: z.array(scoringSubMetricSchema).min(1),
 });
 
 export const scoringConfigurationSchema = z
   .object({
     version: z.string().min(1),
-    path: z.enum(SCORABLE_PATHS),
     dimensions: z.array(scoringDimensionSchema).min(1),
-    /** Dimension used for the Acquire strategic-fit floor. */
-    strategicFitDimension: dimensionKeySchema,
-    /** Dimension used for the Acquire acquisition-plausibility floor. */
-    acquisitionPlausibilityDimension: dimensionKeySchema,
   })
   .superRefine((config, ctx) => {
-    const keys = config.dimensions.map((dimension) => dimension.key);
-    const duplicates = keys.filter((key, index) => keys.indexOf(key) !== index);
-    if (duplicates.length > 0) {
+    const dimensionKeys = config.dimensions.map((dimension) => dimension.key);
+    const duplicateDimensions = dimensionKeys.filter(
+      (key, index) => dimensionKeys.indexOf(key) !== index,
+    );
+    if (duplicateDimensions.length > 0) {
       ctx.addIssue({
         code: "custom",
-        message: `duplicate scoring dimensions: ${[...new Set(duplicates)].join(", ")}`,
+        message: `duplicate scoring dimensions: ${[...new Set(duplicateDimensions)].join(", ")}`,
       });
     }
 
@@ -54,102 +79,107 @@ export const scoringConfigurationSchema = z
       ctx.addIssue({ code: "custom", message: `dimension weights must total 100, got ${total}` });
     }
 
-    for (const named of [config.strategicFitDimension, config.acquisitionPlausibilityDimension]) {
-      if (!keys.includes(named)) {
-        ctx.addIssue({ code: "custom", message: `unknown dimension referenced: ${named}` });
+    // A sub-metric key has to be unique across the whole model, not just within
+    // its dimension: the input is keyed by sub-metric, so a repeat would make
+    // one supplied score silently count twice.
+    const subMetricKeys = config.dimensions.flatMap((dimension) =>
+      dimension.subMetrics.map((subMetric) => subMetric.key),
+    );
+    const duplicateSubMetrics = subMetricKeys.filter(
+      (key, index) => subMetricKeys.indexOf(key) !== index,
+    );
+    if (duplicateSubMetrics.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: `duplicate sub-metrics: ${[...new Set(duplicateSubMetrics)].join(", ")}`,
+      });
+    }
+
+    for (const dimension of config.dimensions) {
+      const shareTotal = dimension.subMetrics.reduce((sum, subMetric) => sum + subMetric.share, 0);
+      if (Math.abs(shareTotal - 1) > 1e-9) {
+        ctx.addIssue({
+          code: "custom",
+          message: `sub-metric shares for "${dimension.key}" must total 1, got ${shareTotal}`,
+        });
       }
     }
   });
 
-export const riskComponentDefinitionSchema = z.object({
-  key: dimensionKeySchema,
-  label: z.string().min(1),
-  max: z.number().positive(),
-});
-
-export const evidenceBandSchema = z.object({
-  minCoverage: z.number().min(0).max(1),
-  maxCoverage: z.number().min(0).max(1),
-  minPenalty: z.number().min(0),
-  maxPenalty: z.number().min(0),
-});
-
+/** Section 28. Seven of these; one of them runs before the score exists. */
 export const hardGateDefinitionSchema = z.object({
-  key: dimensionKeySchema,
+  key: keySchema,
   label: z.string().min(1),
-  /** A triggered permanent gate rules out Acquire. */
-  permanent: z.boolean(),
-  /** An unresolved critical gate forces Research only. */
-  critical: z.boolean(),
+  trigger: z.string().min(1),
+  action: z.string().min(1),
+  /**
+   * The entity gate alone. Section 28: "Stop; resolve entity before scoring."
+   * A score computed against an unresolved identity describes nobody.
+   */
+  resolveBeforeScoring: z.boolean(),
 });
 
-export const scoringThresholdsSchema = z.object({
-  researchOnlyCoverageFloor: z.number().min(0).max(1),
-  acquireMinFinalScore: z.number().min(0).max(100),
-  acquireMinStrategicFit: z.number().min(0).max(5),
-  acquireMinCoverage: z.number().min(0).max(1),
-  acquireMinAcquisitionPlausibility: z.number().min(0).max(5),
-  monitorMinFinalScore: z.number().min(0).max(100),
-});
-
-export const scoringPolicySchema = z
+export const scoringThresholdsSchema = z
   .object({
-    riskComponents: z.array(riskComponentDefinitionSchema).min(1),
-    riskPenaltyCap: z.number().positive(),
-    evidenceBands: z.array(evidenceBandSchema).min(1),
-    hardGates: z.array(hardGateDefinitionSchema).min(1),
-    thresholds: scoringThresholdsSchema,
+    priorityMinScore: z.number().min(0).max(100),
+    priorityMinCoverage: z.number().min(0).max(1),
+    shortlistMinScore: z.number().min(0).max(100),
+    conditionalWatchlistMinScore: z.number().min(0).max(100),
+    coverageGateFloor: z.number().min(0).max(1),
   })
-  .superRefine((policy, ctx) => {
-    const riskKeys = policy.riskComponents.map((component) => component.key);
-    if (new Set(riskKeys).size !== riskKeys.length) {
-      ctx.addIssue({ code: "custom", message: "duplicate risk components" });
+  .superRefine((thresholds, ctx) => {
+    if (thresholds.priorityMinScore <= thresholds.shortlistMinScore) {
+      ctx.addIssue({ code: "custom", message: "priority threshold must sit above shortlist" });
     }
-
-    const gateKeys = policy.hardGates.map((gate) => gate.key);
-    if (new Set(gateKeys).size !== gateKeys.length) {
-      ctx.addIssue({ code: "custom", message: "duplicate hard gates" });
+    if (thresholds.shortlistMinScore <= thresholds.conditionalWatchlistMinScore) {
+      ctx.addIssue({ code: "custom", message: "shortlist threshold must sit above watchlist" });
     }
-
-    for (const band of policy.evidenceBands) {
-      if (band.maxCoverage < band.minCoverage) {
-        ctx.addIssue({ code: "custom", message: "evidence band coverage range is inverted" });
-      }
-      if (band.maxPenalty < band.minPenalty) {
-        ctx.addIssue({ code: "custom", message: "evidence band penalty range is inverted" });
-      }
+    if (thresholds.priorityMinCoverage < thresholds.coverageGateFloor) {
+      ctx.addIssue({
+        code: "custom",
+        message: "the Priority coverage floor cannot sit below the coverage gate",
+      });
     }
   });
+
+export const scoringPolicySchema = z.object({
+  hardGates: z.array(hardGateDefinitionSchema).min(1),
+  thresholds: scoringThresholdsSchema,
+});
 
 /**
- * A dimension is scored, unknown, or not applicable.
+ * Section 30's design rule, as three states rather than two.
  *
- * `unknown` stays in the applicable-weight denominator but contributes nothing
- * to the numerator: a missing fact lowers confidence without being punished as
- * if it were a zero. `not_applicable` leaves both sides of the calculation and
- * therefore requires an explicit reason, so it cannot be used to quietly delete
- * an inconvenient dimension.
+ * "null means unknown. Zero means examined and weak. They are never
+ * interchangeable." `not_applicable` is a third state the source document folds
+ * into unknown, and separating them is deliberate: a measure that does not apply
+ * to a business model should not count against that company's evidence coverage
+ * the way a fact nobody has published does.
  */
-export const dimensionInputSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("scored"),
-    score: z.number().min(0).max(5),
-    reason: z.string().optional(),
-  }),
-  z.object({
-    status: z.literal("unknown"),
-    reason: z.string().optional(),
-  }),
-  z.object({
-    status: z.literal("not_applicable"),
-    reason: z.string().min(1, "not_applicable requires an explicit reason"),
-  }),
-]);
-
-export const riskComponentInputSchema = z.object({
-  value: z.number().min(0),
-  reason: z.string().optional(),
-});
+export const subMetricInputSchema = z
+  .object({
+    status: z.enum(["scored", "unknown", "not_applicable"]),
+    score: z.number().int().min(0).max(5).nullish(),
+    /** Required when scored or not applicable; the anchor justification. */
+    reason: z.string().min(1).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.status === "scored" && (input.score === null || input.score === undefined)) {
+      ctx.addIssue({ code: "custom", message: "a scored sub-metric needs a score" });
+    }
+    if (input.status !== "scored" && input.score !== null && input.score !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "an unknown or not-applicable sub-metric must not carry a score",
+      });
+    }
+    if (input.status === "not_applicable" && !input.reason?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "not_applicable needs a reason, or it is indistinguishable from a gap",
+      });
+    }
+  });
 
 export const hardGateInputSchema = z.object({
   state: z.enum(["clear", "triggered", "unresolved"]),
@@ -157,93 +187,108 @@ export const hardGateInputSchema = z.object({
   reason: z.string().optional(),
 });
 
-export const resolutionStatusSchema = z.object({
-  /** Which legal entity is actually being acquired. */
-  legalIdentity: z.enum(["resolved", "unresolved"]),
-  /** Whether the target is already spoken for, in a process, or independent. */
-  maStatus: z.enum(["resolved", "unresolved"]),
-  /** Which permissions travel with the transaction. */
-  regulatoryPerimeter: z.enum(["resolved", "unresolved"]),
-});
-
-export const routeScoreSchema = z.object({
+export const routeInputSchema = z.object({
   score: z.number().min(0).max(5),
   reason: z.string().optional(),
 });
 
-/**
- * How acquisition compares with the alternatives. Acquire requires control to
- * beat every other route outright, which is what stops a high fit score from
- * being read as an instruction to buy.
- */
-export const routeAssessmentSchema = z.object({
-  acquire: routeScoreSchema,
-  build: routeScoreSchema,
-  partner: routeScoreSchema,
-  invest: routeScoreSchema,
-  monitor: routeScoreSchema,
-});
+/** Section 23. Buy is one of five, and the engine makes it compete. */
+export const routeNameSchema = z.enum(["build", "partner", "buy", "invest", "watch"]);
+
+/** Section 34. An action to take, distinct from the route it implies. */
+export const recommendationLabelSchema = z.enum([
+  "priority_diligence",
+  "shortlist",
+  "partner",
+  "watch",
+  "do_not_advance",
+  "blocked",
+]);
 
 export const scoringInputSchema = z.object({
-  path: z.enum(SCORABLE_PATHS),
-  /**
-   * The regulated-access/customer-book subtype. It re-anchors the Tuck-in
-   * dimensions and never applies to a Platform scorecard.
-   */
-  subtype: z.literal("regulated_access").nullish(),
-  dimensions: z.record(z.string(), dimensionInputSchema),
-  risk: z.record(z.string(), riskComponentInputSchema),
-  /** Supplied, then validated against the band the coverage actually earns. */
-  evidencePenalty: z.number().min(0),
+  /** Keyed by sub-metric, because the sub-metric is what carries evidence. */
+  subMetrics: z.record(z.string(), subMetricInputSchema),
   hardGates: z.record(z.string(), hardGateInputSchema),
-  resolution: resolutionStatusSchema,
-  routeAssessment: routeAssessmentSchema,
+  routes: z.record(routeNameSchema, routeInputSchema),
   /** Explanatory only. Excluded from the input hash. */
   notes: z.string().optional(),
+});
+
+export const subMetricBreakdownEntrySchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  /** Absolute weight, not the share: `dimension.weight * share`. */
+  weight: z.number(),
+  status: z.enum(["scored", "unknown", "not_applicable"]),
+  score: z.number().nullable(),
+  contribution: z.number().nullable(),
 });
 
 export const scoreBreakdownEntrySchema = z.object({
   key: z.string(),
   label: z.string(),
   weight: z.number(),
-  status: z.enum(["scored", "unknown", "not_applicable"]),
+  /** A dimension is scored when any of its sub-metrics is. */
+  status: z.enum(["scored", "partially_scored", "unknown", "not_applicable"]),
+  /** The 0-5 equivalent of the dimension's weighted contribution, or null. */
   score: z.number().nullable(),
-  weightedContribution: z.number().nullable(),
+  contribution: z.number().nullable(),
+  subMetrics: z.array(subMetricBreakdownEntrySchema),
+});
+
+export const gateOutcomeSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  state: z.enum(["clear", "triggered", "unresolved"]),
+  action: z.string(),
 });
 
 export const scoringResultSchema = z.object({
   modelVersion: z.string(),
-  path: z.enum(SCORABLE_PATHS),
-  subtype: z.literal("regulated_access").nullable(),
-  positiveNormalized: z.number().nullable(),
-  weightedCoverage: z.number(),
-  riskPenalty: z.number(),
-  evidencePenalty: z.number(),
-  finalScore: z.number().nullable(),
-  scoreState: z.enum(["scored", "research_only"]),
-  recommendation: z.enum(RECOMMENDATION_STATES),
-  acquireEligible: z.boolean(),
-  /** Human-readable list of every Acquire condition that failed. */
-  acquireBlockers: z.array(z.string()),
-  triggeredPermanentGates: z.array(z.string()),
-  unresolvedCriticalGates: z.array(z.string()),
+  /**
+   * Section 26, and the three numbers it insists travel together: "A normalized
+   * 82 at 55% coverage with a 45-90 range is not '82/100.'"
+   */
+  normalizedScore: z.number().min(0).max(100).nullable(),
+  coverage: z.number().min(0).max(1),
+  lowerBound: z.number().min(0).max(100).nullable(),
+  upperBound: z.number().min(0).max(100).nullable(),
+  recommendation: recommendationLabelSchema,
+  /** The route the recorded assessment supports, and its runner-up. */
+  bestRoute: routeNameSchema,
+  secondBestRoute: routeNameSchema,
+  /** Section 23: control has to beat every alternative, not merely score well. */
+  buyBeatsAlternatives: z.boolean(),
+  /** Every gate's state, so an answer can show pass/fail/unknown for all seven. */
+  gates: z.array(gateOutcomeSchema),
+  /** Gate keys that block advancement, in definition order. */
+  blockingGates: z.array(z.string()),
   breakdown: z.array(scoreBreakdownEntrySchema),
   inputHash: z.string(),
 });
 
+export type ScoringAnchors = z.infer<typeof scoringAnchorsSchema>;
+export type ScoringSubMetric = z.infer<typeof scoringSubMetricSchema>;
 export type ScoringDimension = z.infer<typeof scoringDimensionSchema>;
-export type ScoringConfiguration = z.input<typeof scoringConfigurationSchema>;
-export type ScoringPolicy = z.input<typeof scoringPolicySchema>;
-export type RiskComponentDefinition = z.infer<typeof riskComponentDefinitionSchema>;
-export type EvidenceBand = z.infer<typeof evidenceBandSchema>;
+export type ScoringConfiguration = z.infer<typeof scoringConfigurationSchema>;
 export type HardGateDefinition = z.infer<typeof hardGateDefinitionSchema>;
 export type ScoringThresholds = z.infer<typeof scoringThresholdsSchema>;
-export type DimensionInput = z.infer<typeof dimensionInputSchema>;
-export type RiskComponentInput = z.infer<typeof riskComponentInputSchema>;
+export type ScoringPolicy = z.infer<typeof scoringPolicySchema>;
+export type SubMetricInput = z.infer<typeof subMetricInputSchema>;
 export type HardGateInput = z.infer<typeof hardGateInputSchema>;
-export type ResolutionStatus = z.infer<typeof resolutionStatusSchema>;
-export type RouteAssessment = z.infer<typeof routeAssessmentSchema>;
+export type RouteInput = z.infer<typeof routeInputSchema>;
+export type RouteName = z.infer<typeof routeNameSchema>;
+export type RecommendationLabel = z.infer<typeof recommendationLabelSchema>;
 export type ScoringInput = z.infer<typeof scoringInputSchema>;
+export type SubMetricBreakdownEntry = z.infer<typeof subMetricBreakdownEntrySchema>;
 export type ScoreBreakdownEntry = z.infer<typeof scoreBreakdownEntrySchema>;
+export type GateOutcome = z.infer<typeof gateOutcomeSchema>;
 export type ScoringResult = z.infer<typeof scoringResultSchema>;
-export type AlternativeRouteName = (typeof ALTERNATIVE_ROUTES)[number];
+
+/** Section 29's four source-quality levels, as configuration. */
+export interface EvidenceLevel {
+  level: "A" | "B" | "C" | "D";
+  label: string;
+  permittedUse: string;
+  discoveryOnly: boolean;
+}

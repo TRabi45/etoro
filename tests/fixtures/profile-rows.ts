@@ -201,15 +201,24 @@ export const ASSESSMENT_ROW: RawAssessmentRow = {
 
 export const SCORE_ROW: RawScoreRow = {
   id: "99999999-0000-4000-8000-000000000001",
-  model_version: "0.2",
-  path: "tuck_in",
-  positive_normalized: 79.78,
-  risk_penalty: 4,
-  evidence_penalty: 2,
-  weighted_coverage: 0.93,
-  final_score: 73.78,
-  score_state: "scored",
+  model_version: "0.3",
+  positive_normalized: 81.18,
+  weighted_coverage: 0.85,
+  lower_bound: 69,
+  upper_bound: 84,
   recommendation: "partner",
+  best_route: "partner",
+  second_best_route: "buy",
+  buy_beats_alternatives: false,
+  gates: [
+    {
+      key: "regulatory",
+      label: "Regulatory gate",
+      state: "unresolved",
+      action: "Blocked - Legal and Regulatory review.",
+    },
+  ],
+  blocking_gates: [],
   calculated_at: "2026-09-03T10:00:00.000Z",
   input_snapshot: {
     breakdown: [
@@ -219,7 +228,7 @@ export const SCORE_ROW: RawScoreRow = {
         weight: 10,
         status: "scored",
         score: 5,
-        weightedContribution: 10,
+        contribution: 10,
       },
       {
         key: "acquisition_plausibility",
@@ -227,7 +236,7 @@ export const SCORE_ROW: RawScoreRow = {
         weight: 7,
         status: "unknown",
         score: null,
-        weightedContribution: null,
+        contribution: null,
       },
     ],
     acquireBlockers: ["acquisition plausibility is unknown"],

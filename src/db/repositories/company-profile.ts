@@ -115,14 +115,16 @@ export interface RawAssessmentRow {
 export interface RawScoreRow {
   id: string;
   model_version: string;
-  path: TargetPath;
   positive_normalized: number | null;
-  risk_penalty: number;
-  evidence_penalty: number;
   weighted_coverage: number;
-  final_score: number | null;
-  score_state: "scored" | "research_only";
+  lower_bound: number | null;
+  upper_bound: number | null;
   recommendation: RecommendationState;
+  best_route: string | null;
+  second_best_route: string | null;
+  buy_beats_alternatives: boolean | null;
+  gates: unknown;
+  blocking_gates: string[] | null;
   calculated_at: string;
   input_snapshot: unknown;
 }
@@ -196,26 +198,39 @@ export interface AssessmentView {
 
 export interface ScoreView {
   modelVersion: string;
-  path: TargetPath;
-  positiveNormalized: number | null;
-  riskPenalty: number;
-  evidencePenalty: number;
-  weightedCoverage: number;
-  finalScore: number | null;
-  scoreState: "scored" | "research_only";
+  /**
+   * The three numbers section 26 requires to travel together: "A normalized 82
+   * at 55% coverage with a 45-90 range is not '82/100.'"
+   */
+  normalizedScore: number | null;
+  coverage: number;
+  lowerBound: number | null;
+  upperBound: number | null;
   recommendation: RecommendationState;
+  /** Section 23. Null on rows written before routes were recorded. */
+  bestRoute: string | null;
+  secondBestRoute: string | null;
+  buyBeatsAlternatives: boolean | null;
+  gates: GateView[];
+  blockingGates: string[];
   calculatedAt: string;
   breakdown: ScoreBreakdownRow[];
-  acquireBlockers: string[];
+}
+
+export interface GateView {
+  key: string;
+  label: string;
+  state: "clear" | "triggered" | "unresolved";
+  action: string;
 }
 
 export interface ScoreBreakdownRow {
   key: string;
   label: string;
   weight: number;
-  status: "scored" | "unknown" | "not_applicable";
+  status: "scored" | "partially_scored" | "unknown" | "not_applicable";
   score: number | null;
-  weightedContribution: number | null;
+  contribution: number | null;
 }
 
 export interface CompanyProfileView {
@@ -491,23 +506,23 @@ export function mapCompanyProfile(
 
   const snapshot = (rows.score?.input_snapshot ?? {}) as {
     breakdown?: ScoreBreakdownRow[];
-    acquireBlockers?: string[];
   };
 
   const score: ScoreView | null = rows.score
     ? {
         modelVersion: rows.score.model_version,
-        path: rows.score.path,
-        positiveNormalized: rows.score.positive_normalized,
-        riskPenalty: rows.score.risk_penalty,
-        evidencePenalty: rows.score.evidence_penalty,
-        weightedCoverage: rows.score.weighted_coverage,
-        finalScore: rows.score.final_score,
-        scoreState: rows.score.score_state,
+        normalizedScore: rows.score.positive_normalized,
+        coverage: rows.score.weighted_coverage,
+        lowerBound: rows.score.lower_bound,
+        upperBound: rows.score.upper_bound,
         recommendation: rows.score.recommendation,
+        bestRoute: rows.score.best_route,
+        secondBestRoute: rows.score.second_best_route,
+        buyBeatsAlternatives: rows.score.buy_beats_alternatives,
+        gates: (rows.score.gates ?? []) as GateView[],
+        blockingGates: rows.score.blocking_gates ?? [],
         calculatedAt: rows.score.calculated_at,
         breakdown: snapshot.breakdown ?? [],
-        acquireBlockers: snapshot.acquireBlockers ?? [],
       }
     : null;
 
@@ -617,7 +632,7 @@ export async function getCompanyProfileWithEvidence(
       client
         .from("scores")
         .select(
-          "id, model_version, path, positive_normalized, risk_penalty, evidence_penalty, weighted_coverage, final_score, score_state, recommendation, calculated_at, input_snapshot",
+          "id, model_version, positive_normalized, weighted_coverage, lower_bound, upper_bound, recommendation, best_route, second_best_route, buy_beats_alternatives, gates, blocking_gates, calculated_at, input_snapshot",
         )
         .eq("company_id", companyId)
         .order("calculated_at", { ascending: false })

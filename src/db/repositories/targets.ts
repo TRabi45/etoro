@@ -26,10 +26,16 @@ export interface TargetSummary {
   hqCountry: string | null;
   maState: MaState | null;
   path: TargetPath | null;
-  finalScore: number | null;
+  /**
+   * Section 26 keeps these together: a score without its coverage and range is
+   * "not '82/100'". A caller that ranks on the score alone still gets the other
+   * two, so it can say what the ranking is resting on.
+   */
+  normalizedScore: number | null;
+  coverage: number | null;
+  lowerBound: number | null;
+  upperBound: number | null;
   recommendation: RecommendationState | null;
-  scoreState: "scored" | "research_only" | null;
-  weightedCoverage: number | null;
   /** False when the company is still an identity with no assessment. */
   hasResearch: boolean;
 }
@@ -46,9 +52,10 @@ export interface SearchTargetsFilters {
 interface ScoreRow {
   final_score: number | null;
   recommendation: RecommendationState;
-  score_state: "scored" | "research_only";
   weighted_coverage: number;
-  path: TargetPath;
+  lower_bound: number | null;
+  upper_bound: number | null;
+  path: TargetPath | null;
   calculated_at: string;
 }
 
@@ -63,7 +70,7 @@ export async function searchTargets(
   let query = connection.client
     .from("companies")
     .select(
-      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, score_state, weighted_coverage, path, calculated_at), assessments(id)",
+      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, path, calculated_at), assessments(id)",
     );
 
   if (filters.geography) {
@@ -99,10 +106,11 @@ export async function searchTargets(
       hqCountry: row.hq_country,
       maState: row.ma_state,
       path: latest?.path ?? null,
-      finalScore: latest?.final_score ?? null,
+      normalizedScore: latest?.final_score ?? null,
+      coverage: latest?.weighted_coverage ?? null,
+      lowerBound: latest?.lower_bound ?? null,
+      upperBound: latest?.upper_bound ?? null,
       recommendation: latest?.recommendation ?? null,
-      scoreState: latest?.score_state ?? null,
-      weightedCoverage: latest?.weighted_coverage ?? null,
       hasResearch: ((row.assessments ?? []) as { id: string }[]).length > 0,
     };
   });
@@ -111,7 +119,8 @@ export async function searchTargets(
     filters.minimumScore === undefined
       ? summaries
       : summaries.filter(
-          (summary) => summary.finalScore !== null && summary.finalScore >= filters.minimumScore!,
+          (summary) =>
+            summary.normalizedScore !== null && summary.normalizedScore >= filters.minimumScore!,
         );
 
   if (filters.path) {
@@ -126,12 +135,12 @@ export async function searchTargets(
   // Highest score first, then unscored companies, so the ranking is meaningful
   // without hiding what has not been looked at yet.
   const ranked = filtered.sort((left, right) => {
-    if (left.finalScore === null && right.finalScore === null) {
+    if (left.normalizedScore === null && right.normalizedScore === null) {
       return left.canonicalName.localeCompare(right.canonicalName);
     }
-    if (left.finalScore === null) return 1;
-    if (right.finalScore === null) return -1;
-    return right.finalScore - left.finalScore;
+    if (left.normalizedScore === null) return 1;
+    if (right.normalizedScore === null) return -1;
+    return right.normalizedScore - left.normalizedScore;
   });
 
   return { ok: true, data: ranked.slice(0, filters.limit) };
@@ -177,7 +186,7 @@ export async function getMarketMap(filters: {
 
   const entries: MarketMapEntry[] = [...byTheme.entries()]
     .map(([category, members]) => {
-      const scored = members.filter((member) => member.finalScore !== null);
+      const scored = members.filter((member) => member.normalizedScore !== null);
       return {
         category,
         companyCount: members.length,
@@ -187,7 +196,7 @@ export async function getMarketMap(filters: {
           scored.length === 0
             ? null
             : Math.round(
-                (scored.reduce((sum, member) => sum + (member.finalScore ?? 0), 0) /
+                (scored.reduce((sum, member) => sum + (member.normalizedScore ?? 0), 0) /
                   scored.length) *
                   100,
               ) / 100,

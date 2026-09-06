@@ -1210,59 +1210,84 @@ export type Database = {
       scores: {
         Row: {
           agent_run_id: string | null
+          best_route: Database["public"]["Enums"]["scoring_route"] | null
+          blocking_gates: string[] | null
+          buy_beats_alternatives: boolean | null
           calculated_at: string
           company_id: string
           created_at: string
-          evidence_penalty: number
+          evidence_penalty: number | null
           final_score: number | null
+          gates: Json | null
           id: string
           input_hash: string
           input_snapshot: Json
+          lower_bound: number | null
           model_version: string
-          path: Database["public"]["Enums"]["target_path"]
+          path: Database["public"]["Enums"]["target_path"] | null
           positive_normalized: number | null
           recommendation: Database["public"]["Enums"]["recommendation_state"]
-          risk_penalty: number
+          risk_penalty: number | null
           score_state: Database["public"]["Enums"]["score_state"]
           scoring_model_id: string
+          second_best_route: Database["public"]["Enums"]["scoring_route"] | null
+          upper_bound: number | null
           weighted_coverage: number
         }
         Insert: {
           agent_run_id?: string | null
+          best_route?: Database["public"]["Enums"]["scoring_route"] | null
+          blocking_gates?: string[] | null
+          buy_beats_alternatives?: boolean | null
           calculated_at?: string
           company_id: string
           created_at?: string
-          evidence_penalty: number
+          evidence_penalty?: number | null
           final_score?: number | null
+          gates?: Json | null
           id?: string
           input_hash: string
           input_snapshot: Json
+          lower_bound?: number | null
           model_version: string
-          path: Database["public"]["Enums"]["target_path"]
+          path?: Database["public"]["Enums"]["target_path"] | null
           positive_normalized?: number | null
           recommendation: Database["public"]["Enums"]["recommendation_state"]
-          risk_penalty: number
+          risk_penalty?: number | null
           score_state: Database["public"]["Enums"]["score_state"]
           scoring_model_id: string
+          second_best_route?:
+            | Database["public"]["Enums"]["scoring_route"]
+            | null
+          upper_bound?: number | null
           weighted_coverage: number
         }
         Update: {
           agent_run_id?: string | null
+          best_route?: Database["public"]["Enums"]["scoring_route"] | null
+          blocking_gates?: string[] | null
+          buy_beats_alternatives?: boolean | null
           calculated_at?: string
           company_id?: string
           created_at?: string
-          evidence_penalty?: number
+          evidence_penalty?: number | null
           final_score?: number | null
+          gates?: Json | null
           id?: string
           input_hash?: string
           input_snapshot?: Json
+          lower_bound?: number | null
           model_version?: string
-          path?: Database["public"]["Enums"]["target_path"]
+          path?: Database["public"]["Enums"]["target_path"] | null
           positive_normalized?: number | null
           recommendation?: Database["public"]["Enums"]["recommendation_state"]
-          risk_penalty?: number
+          risk_penalty?: number | null
           score_state?: Database["public"]["Enums"]["score_state"]
           scoring_model_id?: string
+          second_best_route?:
+            | Database["public"]["Enums"]["scoring_route"]
+            | null
+          upper_bound?: number | null
           weighted_coverage?: number
         }
         Relationships: [
@@ -1294,12 +1319,16 @@ export type Database = {
           activated_at: string | null
           created_at: string
           dimensions: Json
-          evidence_bands: Json
+          evidence_bands: Json | null
+          hard_gates: Json | null
           id: string
           is_active: boolean
           locked_at: string | null
-          path: Database["public"]["Enums"]["target_path"]
-          risk_components: Json
+          owner: string | null
+          path: Database["public"]["Enums"]["target_path"] | null
+          rationale: string | null
+          risk_components: Json | null
+          thesis_version: string | null
           thresholds: Json
           version: string
         }
@@ -1307,12 +1336,16 @@ export type Database = {
           activated_at?: string | null
           created_at?: string
           dimensions: Json
-          evidence_bands: Json
+          evidence_bands?: Json | null
+          hard_gates?: Json | null
           id?: string
           is_active?: boolean
           locked_at?: string | null
-          path: Database["public"]["Enums"]["target_path"]
-          risk_components: Json
+          owner?: string | null
+          path?: Database["public"]["Enums"]["target_path"] | null
+          rationale?: string | null
+          risk_components?: Json | null
+          thesis_version?: string | null
           thresholds: Json
           version: string
         }
@@ -1320,12 +1353,16 @@ export type Database = {
           activated_at?: string | null
           created_at?: string
           dimensions?: Json
-          evidence_bands?: Json
+          evidence_bands?: Json | null
+          hard_gates?: Json | null
           id?: string
           is_active?: boolean
           locked_at?: string | null
-          path?: Database["public"]["Enums"]["target_path"]
-          risk_components?: Json
+          owner?: string | null
+          path?: Database["public"]["Enums"]["target_path"] | null
+          rationale?: string | null
+          risk_components?: Json | null
+          thesis_version?: string | null
           thresholds?: Json
           version?: string
         }
@@ -1567,6 +1604,11 @@ export type Database = {
         | "monitor"
         | "pass"
         | "research_only"
+        | "priority_diligence"
+        | "shortlist"
+        | "watch"
+        | "do_not_advance"
+        | "blocked"
       record_origin: "bootstrap_identity" | "agent_generated"
       regulatory_role:
         | "broker_dealer"
@@ -1582,6 +1624,7 @@ export type Database = {
       run_status: "running" | "success" | "partial_success" | "failed"
       run_trigger: "scheduled" | "manual" | "bootstrap"
       score_state: "scored" | "research_only"
+      scoring_route: "build" | "partner" | "buy" | "invest" | "watch"
       source_trust_tier: "primary" | "secondary" | "tertiary"
       source_type:
         | "regulator_registry"
@@ -1890,6 +1933,11 @@ export const Constants = {
         "monitor",
         "pass",
         "research_only",
+        "priority_diligence",
+        "shortlist",
+        "watch",
+        "do_not_advance",
+        "blocked",
       ],
       record_origin: ["bootstrap_identity", "agent_generated"],
       regulatory_role: [
@@ -1907,6 +1955,7 @@ export const Constants = {
       run_status: ["running", "success", "partial_success", "failed"],
       run_trigger: ["scheduled", "manual", "bootstrap"],
       score_state: ["scored", "research_only"],
+      scoring_route: ["build", "partner", "buy", "invest", "watch"],
       source_trust_tier: ["primary", "secondary", "tertiary"],
       source_type: [
         "regulator_registry",

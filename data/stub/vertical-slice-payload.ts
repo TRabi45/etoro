@@ -316,78 +316,65 @@ export const VERTICAL_SLICE_STUB_PAYLOAD: ExtractionPayload = {
   /**
    * Structured inputs for the deterministic engine - never a score.
    *
-   * `acquisition_plausibility` is deliberately `unknown`: no valuation evidence
-   * exists, so it stays in the coverage denominator without being scored. That
-   * single decision is what stops this company from qualifying for Acquire no
-   * matter how well it scores elsewhere, which is the behaviour the scoring
-   * design exists to produce.
+   * Two dimensions are deliberately `unknown`. No revenue evidence exists, and
+   * no valuation evidence exists, so both stay in the coverage denominator
+   * without being scored. That is what produces an honest 85% coverage and a
+   * range wide enough to show what is still unanswered, rather than a confident
+   * number resting on the four things that happened to be published.
+   *
+   * The regulatory gate is `unresolved` rather than clear, because the licensed
+   * perimeter is only partly established. Section 28 makes that a reason to deny
+   * Priority, not a reason to block - which is the BetaOptions case from section
+   * 35, and the behaviour worth demonstrating on the one profile this project
+   * has end to end.
    */
   scoring: {
-    path: "tuck_in",
-    subtype: null,
-    dimensions: {
-      product_capability_gap_closed: { status: "scored", score: 4 },
-      technology_ip_data_team: { status: "scored", score: 4 },
-      speed_to_market_vs_build: { status: "scored", score: 4 },
-      distribution_leverage: { status: "scored", score: 4 },
-      strategic_theme_fit: { status: "scored", score: 5 },
-      integration_feasibility: { status: "scored", score: 3 },
-      acquisition_plausibility: {
+    subMetrics: {
+      strategic_fit: { status: "scored", score: 5 },
+      incremental_capability: { status: "scored", score: 4 },
+      market_customers_distribution: { status: "scored", score: 4 },
+      product_technology: { status: "scored", score: 4 },
+      financial_quality: {
+        status: "unknown",
+        reason: "STUB: no revenue, margin or runway evidence was found.",
+      },
+      regulatory_feasibility: { status: "scored", score: 3 },
+      integration_team: { status: "scored", score: 3 },
+      deal_feasibility: {
         status: "unknown",
         reason: "STUB: no valuation or shareholder evidence was found.",
       },
-      why_now_competitive_scarcity: { status: "scored", score: 3 },
     },
-    risk: {
-      regulatory_change_of_control: {
-        value: 1,
-        reason: "STUB: licensed perimeter only partly established.",
-      },
-      aml_sanctions_security_custody: { value: 0 },
-      integration_technology_data_migration: {
-        value: 2,
-        reason: "STUB: account-linking data would need migration and re-consent.",
-      },
-      valuation_financing_seller_dynamics: {
-        value: 1,
-        reason: "STUB: a recent round may have reset price expectations upward.",
-      },
-      conduct_reputation_customer_concentration: { value: 0 },
-    },
-    // 93% weighted coverage falls in the >=85% band, which allows 0-2.
-    evidencePenalty: 2,
     hardGates: {
-      legal_regulatory_impossibility: { state: "clear", evidence: "STUB: no prohibition found." },
-      sanctions_aml_financial_crime: { state: "clear", evidence: "STUB: nothing found." },
-      entity_mismatch: {
+      entity: {
         state: "clear",
         evidence: "STUB: brand maps to a single registered operating entity.",
       },
-      non_acquirability: { state: "clear", evidence: "STUB: independent, no sale process found." },
-      critical_security_custody_failure: {
-        state: "clear",
-        evidence: "STUB: no incident found; company does not hold client assets.",
+      regulatory: {
+        state: "unresolved",
+        evidence: "STUB: the licensed perimeter is only partly established.",
       },
-      strategic_contradiction: { state: "clear", evidence: "STUB: none identified." },
-      evidence_floor: {
+      client_assets: {
+        state: "clear",
+        evidence: "STUB: the company does not hold client assets.",
+      },
+      security: { state: "clear", evidence: "STUB: no incident found." },
+      integrity: { state: "clear", evidence: "STUB: nothing anomalous in the reported activity." },
+      deal: { state: "clear", evidence: "STUB: independent, no sale process found." },
+      coverage: {
         state: "clear",
         evidence: "STUB: identity and operating status are established.",
       },
     },
-    resolution: {
-      legalIdentity: "resolved",
-      maStatus: "resolved",
-      regulatoryPerimeter: "unresolved",
-    },
-    routeAssessment: {
-      acquire: { score: 3, reason: "STUB: plausible, but price and perimeter are unclear." },
+    routes: {
+      buy: { score: 3, reason: "STUB: plausible, but price and perimeter are unclear." },
       build: { score: 2, reason: "STUB: reproducible, but slower and without the user base." },
       partner: {
         score: 4,
-        reason: "STUB: distribution partnership tests the thesis at far lower cost.",
+        reason: "STUB: a distribution partnership tests the thesis at far lower cost.",
       },
       invest: { score: 3, reason: "STUB: keeps the option open without integration risk." },
-      monitor: { score: 2, reason: "STUB: a round has just closed, so nothing is imminent." },
+      watch: { score: 2, reason: "STUB: a round has just closed, so nothing is imminent." },
     },
   },
 };

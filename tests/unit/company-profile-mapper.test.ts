@@ -32,7 +32,12 @@ describe("mapCompanyProfile", () => {
     // The assessed path comes from the assessment, not from the identity row.
     expect(profile.path).toBe("tuck_in");
     expect(profile.hasResearch).toBe(true);
-    expect(profile.score?.finalScore).toBe(73.78);
+    // Section 26 keeps the three numbers together, so the mapper is checked on
+    // all three rather than on the headline alone.
+    expect(profile.score?.normalizedScore).toBe(81.18);
+    expect(profile.score?.coverage).toBe(0.85);
+    expect(profile.score?.lowerBound).toBe(69);
+    expect(profile.score?.upperBound).toBe(84);
     expect(profile.fundamentals?.evidenceCoverage).toBe(0.93);
     expect(profile.assessment?.counterThesis).toBe("Reproducible in-house.");
   });

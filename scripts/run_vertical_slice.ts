@@ -43,18 +43,19 @@ async function main(): Promise<void> {
     `  score:          ${summary.scoreId}${summary.scoreCreated ? "" : " (unchanged inputs, existing score reused)"}`,
   );
   console.log("");
-  console.log(`  model version:  ${result.modelVersion} (${result.path})`);
-  console.log(`  positive:       ${result.positiveNormalized}`);
-  console.log(`  coverage:       ${(result.weightedCoverage * 100).toFixed(2)}%`);
-  console.log(`  risk penalty:   ${result.riskPenalty}`);
-  console.log(`  evidence pen.:  ${result.evidencePenalty}`);
-  console.log(`  final score:    ${result.finalScore ?? "none (research only)"}`);
-  console.log(`  state:          ${result.scoreState}`);
+  console.log(`  model version:  ${result.modelVersion}`);
+  console.log(`  score:          ${result.normalizedScore ?? "none (nothing scored)"}`);
+  console.log(`  coverage:       ${(result.coverage * 100).toFixed(2)}%`);
+  console.log(`  range:          ${result.lowerBound ?? "-"} to ${result.upperBound ?? "-"}`);
   console.log(`  recommendation: ${result.recommendation}`);
-  if (result.acquireBlockers.length > 0) {
-    console.log("  acquire blocked by:");
-    for (const blocker of result.acquireBlockers) {
-      console.log(`    - ${blocker}`);
+  console.log(
+    `  route:          ${result.bestRoute} (second: ${result.secondBestRoute}), buy beats alternatives: ${result.buyBeatsAlternatives}`,
+  );
+  const notClear = result.gates.filter((gate) => gate.state !== "clear");
+  if (notClear.length > 0) {
+    console.log("  gates needing attention:");
+    for (const gate of notClear) {
+      console.log(`    - ${gate.label}: ${gate.state} - ${gate.action}`);
     }
   }
   console.log("");

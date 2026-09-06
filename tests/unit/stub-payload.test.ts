@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { BOOTSTRAP_COMPANIES } from "@/data/seed/bootstrap";
 import { VERTICAL_SLICE_STUB_PAYLOAD } from "@/data/stub/vertical-slice-payload";
-import { SCORING_MODELS_V0_2 } from "@/src/config/scoring/v0-2";
+import { SCORING_POLICY_V0_3, THESIS_MODEL_V0_3 } from "@/src/config/scoring/v0-3";
 import { scoreTarget } from "@/src/domain/scoring/engine";
 import { extractionPayloadSchema } from "@/src/research/pipeline/extraction-payload";
-import { SCORING_POLICY_V0_2 } from "@/src/research/pipeline/vertical-slice";
 import { GOLD_BENCHMARK_NAMES } from "@/tests/evaluation/gold/gold-benchmark";
 
 /**
@@ -78,23 +77,35 @@ describe("vertical slice stub payload", () => {
     // Locks the whole chain: these are the numbers rendered on the profile, and
     // any change to the payload or the engine has to be a deliberate one.
     const result = scoreTarget({
-      config: SCORING_MODELS_V0_2[VERTICAL_SLICE_STUB_PAYLOAD.scoring.path],
-      policy: SCORING_POLICY_V0_2,
+      config: THESIS_MODEL_V0_3,
+      policy: SCORING_POLICY_V0_3,
       input: VERTICAL_SLICE_STUB_PAYLOAD.scoring,
     });
 
-    expect(result.positiveNormalized).toBe(79.78);
-    expect(result.weightedCoverage).toBe(0.93);
-    expect(result.riskPenalty).toBe(4);
-    expect(result.evidencePenalty).toBe(2);
-    expect(result.finalScore).toBe(73.78);
-    expect(result.scoreState).toBe("scored");
+    // 69 weighted points out of the 85 that were scorable: 69 / 85 = 81.18%.
+    expect(result.normalizedScore).toBe(81.18);
+    expect(result.coverage).toBe(0.85);
 
-    // A respectable score that is still not an Acquire, because plausibility is
-    // unknown, the perimeter is unresolved, and partnership beats control.
+    // The 15 unknown points are financial quality and deal feasibility. If both
+    // turned out to be zero the target sits at 69; if both were fives it sits at
+    // 84. Section 26 requires all three numbers to be shown together, and this
+    // is why: "81" alone hides a fifteen-point question.
+    expect(result.lowerBound).toBe(69);
+    expect(result.upperBound).toBe(84);
+
+    // A strong score that is still not an acquisition. Partnership outscores
+    // control on the recorded route assessment, and section 23 makes that
+    // decisive: "a company should not be recommended for acquisition when the
+    // same capability can be obtained faster or more efficiently through
+    // internal development or partnership."
     expect(result.recommendation).toBe("partner");
-    expect(result.acquireEligible).toBe(false);
-    expect(result.acquireBlockers.join(" ")).toMatch(/acquisition plausibility is unknown/);
-    expect(result.acquireBlockers.join(" ")).toMatch(/does not beat partner/);
+    expect(result.bestRoute).toBe("partner");
+    expect(result.secondBestRoute).toBe("buy");
+    expect(result.buyBeatsAlternatives).toBe(false);
+
+    // The licensed perimeter is only partly established, so the regulatory gate
+    // is unresolved. It denies Priority without blocking the target.
+    expect(result.blockingGates).toEqual([]);
+    expect(result.gates.find((gate) => gate.key === "regulatory")?.state).toBe("unresolved");
   });
 });
