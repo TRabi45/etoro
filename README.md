@@ -15,6 +15,30 @@ unknowns and a counter-thesis.
 > on top of it. Still ahead: the full dashboard (Milestone 5) and deployment
 > (Milestone 6). See [Milestone status](#milestone-status).
 
+## The business foundation
+
+[`docs/ACQUISITION_THESIS.md`](docs/ACQUISITION_THESIS.md) is the authoritative
+account of what eToro may want to buy and why, reduced to the parts a program can
+execute. It carries the scoring model, the decision thresholds, the hard gates,
+the nine target families, the evidence-quality levels and the acceptance tests -
+each line tagged with the section of the source PDF it comes from, which is kept
+alongside it under `docs/sources/`.
+
+Two things follow from it that are easy to get wrong:
+
+- **The weights and thresholds are a proposal, not policy.** The document says so
+  itself. They live in versioned configuration with an owner and a rationale, and
+  a model that has produced a score can never be edited in place.
+- **It is not a target list.** It defines how to reason about a company. Which
+  companies exist, and what is true of them today, is live research the runtime
+  has to do and cite.
+
+`tests/unit/thesis-conformance.test.ts` states what the thesis requires as
+executable assertions and checks the implementation against them. The gaps that
+remain open are inverted with `it.fails`, so closing one makes its test fail for
+passing unexpectedly - a specification gap cannot quietly become satisfied
+without someone noticing.
+
 ## Why the product is shaped this way
 
 Three decisions drive most of the architecture:
