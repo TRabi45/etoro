@@ -38,12 +38,24 @@ export interface FeedDefinition {
  * but warnings, and a run that is permanently `partial_success` for a reason
  * nobody intends to fix teaches whoever reads the dashboard to ignore the
  * status - which defeats the point of having one. Publishers behind Cloudflare
- * (Fintech Futures) and ones whose `/feed` serves HTML rather than RSS
- * (American Banker) fail the same check.
+ * (Fintech Futures, Sifted, The Block) and ones whose `/feed` serves HTML rather
+ * than RSS (American Banker) fail the same check, as does CoinDesk, which rate
+ * limits crawlers with a 429.
+ *
+ * Two feeds turned out to be too few in practice, not in principle: they publish
+ * 15-25 items a day between them, so a second run on the same day found nothing
+ * new and reported it honestly - correct behaviour, and an empty result. Banking
+ * Dive, Payments Dive and Crowdfund Insider widen the intake across the themes
+ * the thesis actually names. A broad technology feed would pass the fetch check
+ * just as easily and then spend the budget extracting articles about consumer
+ * gadgets, which is a more expensive kind of useless than a feed that fails.
  */
 export const DEFAULT_FEEDS: FeedDefinition[] = [
   { name: "TechCrunch Fintech", url: "https://techcrunch.com/category/fintech/feed/" },
   { name: "PYMNTS", url: "https://www.pymnts.com/feed/" },
+  { name: "Banking Dive", url: "https://www.bankingdive.com/feeds/news/" },
+  { name: "Payments Dive", url: "https://www.paymentsdive.com/feeds/news/" },
+  { name: "Crowdfund Insider", url: "https://www.crowdfundinsider.com/feed/" },
 ];
 
 export interface DiscoveredItem {
