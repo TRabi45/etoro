@@ -3,6 +3,7 @@ import { finishAgentRun, startAgentRun } from "@/src/db/repositories/agent-runs"
 import { insertClaim } from "@/src/db/repositories/claims";
 import {
   finishMonitoringRun,
+  getMonitoringRunById,
   startMonitoringRun,
   type RunStatus,
   type RunTrigger,
@@ -457,17 +458,24 @@ export async function runMonitoringPass(
   // --- Step 1: initialise -------------------------------------------------
   const { runId, reused } = await startMonitoringRun(client, options.trigger, idempotencyKey);
   if (reused) {
+    // Report what the existing run actually recorded - which may itself still
+    // be `running`, or may have failed - never a fresh, fabricated `success`
+    // for work this call did not do.
+    const existingRun = await getMonitoringRunById(client, runId);
     return {
       runId,
       reused: true,
-      status: "success",
-      sourcesDiscovered: 0,
-      sourcesFetched: 0,
-      sourcesSkipped: 0,
-      claimsWritten: 0,
-      eventsWritten: 0,
-      companiesDiscovered: 0,
-      warnings: [`A run already exists for "${idempotencyKey}". Nothing was fetched again.`],
+      status: existingRun.status,
+      sourcesDiscovered: existingRun.sourcesDiscovered,
+      sourcesFetched: existingRun.sourcesFetched,
+      sourcesSkipped: existingRun.sourcesSkipped,
+      claimsWritten: existingRun.claimsWritten,
+      eventsWritten: existingRun.eventsWritten,
+      companiesDiscovered: existingRun.companiesDiscovered,
+      warnings: [
+        ...existingRun.warnings,
+        `A run already exists for "${idempotencyKey}"; returning its recorded result instead of fetching again.`,
+      ],
     };
   }
 
@@ -561,8 +569,10 @@ export async function runMonitoringPass(
     status,
     sourcesDiscovered,
     sourcesFetched,
+    sourcesSkipped,
     claimsWritten,
     eventsWritten,
+    companiesDiscovered,
     warnings,
     errorSummary: fatal,
   });

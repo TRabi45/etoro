@@ -1110,6 +1110,7 @@ export type Database = {
       monitoring_runs: {
         Row: {
           claims_written: number
+          companies_discovered: number
           created_at: string
           error_summary: string | null
           events_written: number
@@ -1118,6 +1119,7 @@ export type Database = {
           idempotency_key: string
           sources_discovered: number
           sources_fetched: number
+          sources_skipped: number
           started_at: string
           status: Database["public"]["Enums"]["run_status"]
           trigger: Database["public"]["Enums"]["run_trigger"]
@@ -1126,6 +1128,7 @@ export type Database = {
         }
         Insert: {
           claims_written?: number
+          companies_discovered?: number
           created_at?: string
           error_summary?: string | null
           events_written?: number
@@ -1134,6 +1137,7 @@ export type Database = {
           idempotency_key: string
           sources_discovered?: number
           sources_fetched?: number
+          sources_skipped?: number
           started_at?: string
           status?: Database["public"]["Enums"]["run_status"]
           trigger: Database["public"]["Enums"]["run_trigger"]
@@ -1142,6 +1146,7 @@ export type Database = {
         }
         Update: {
           claims_written?: number
+          companies_discovered?: number
           created_at?: string
           error_summary?: string | null
           events_written?: number
@@ -1150,6 +1155,7 @@ export type Database = {
           idempotency_key?: string
           sources_discovered?: number
           sources_fetched?: number
+          sources_skipped?: number
           started_at?: string
           status?: Database["public"]["Enums"]["run_status"]
           trigger?: Database["public"]["Enums"]["run_trigger"]

@@ -23,8 +23,10 @@ export interface MonitoringRunSummary {
   finishedAt: string | null;
   sourcesDiscovered: number;
   sourcesFetched: number;
+  sourcesSkipped: number;
   claimsWritten: number;
   eventsWritten: number;
+  companiesDiscovered: number;
   warnings: string[];
   errorSummary: string | null;
 }
@@ -88,8 +90,10 @@ export interface FinishRunArgs {
   status: RunStatus;
   sourcesDiscovered: number;
   sourcesFetched: number;
+  sourcesSkipped: number;
   claimsWritten: number;
   eventsWritten: number;
+  companiesDiscovered: number;
   warnings: string[];
   errorSummary?: string | null;
 }
@@ -106,8 +110,10 @@ export async function finishMonitoringRun(
       finished_at: new Date().toISOString(),
       sources_discovered: args.sourcesDiscovered,
       sources_fetched: args.sourcesFetched,
+      sources_skipped: args.sourcesSkipped,
       claims_written: args.claimsWritten,
       events_written: args.eventsWritten,
+      companies_discovered: args.companiesDiscovered,
       // Warnings are stored in full rather than counted. "3 warnings" tells an
       // operator nothing they can act on.
       warnings: args.warnings,
@@ -120,6 +126,49 @@ export async function finishMonitoringRun(
   }
 }
 
+/**
+ * Reads back one run's persisted state.
+ *
+ * Exists so that reusing an idempotency key can report what the original run
+ * actually did - status, real counters, real warnings - instead of a fresh
+ * caller manufacturing a `success` with every counter at zero for a run it did
+ * not perform.
+ */
+export async function getMonitoringRunById(
+  client: TypedSupabaseClient,
+  runId: string,
+): Promise<MonitoringRunSummary> {
+  const { data, error } = await client
+    .from("monitoring_runs")
+    .select(
+      "id, trigger, status, started_at, finished_at, sources_discovered, sources_fetched, sources_skipped, claims_written, events_written, companies_discovered, warnings, error_summary",
+    )
+    .eq("id", runId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new RepositoryWriteError(
+      `could not read monitoring run ${runId}: ${error?.message ?? "no row"}`,
+    );
+  }
+
+  return {
+    id: data.id,
+    trigger: data.trigger,
+    status: data.status,
+    startedAt: data.started_at,
+    finishedAt: data.finished_at,
+    sourcesDiscovered: data.sources_discovered,
+    sourcesFetched: data.sources_fetched,
+    sourcesSkipped: data.sources_skipped,
+    claimsWritten: data.claims_written,
+    eventsWritten: data.events_written,
+    companiesDiscovered: data.companies_discovered,
+    warnings: data.warnings ?? [],
+    errorSummary: data.error_summary,
+  };
+}
+
 /** The most recent runs, for the dashboard's freshness indicator. */
 export async function getRecentRuns(limit = 5): Promise<RepositoryResult<MonitoringRunSummary[]>> {
   const connection = createPublicClient();
@@ -130,7 +179,7 @@ export async function getRecentRuns(limit = 5): Promise<RepositoryResult<Monitor
   const { data, error } = await connection.client
     .from("monitoring_runs")
     .select(
-      "id, trigger, status, started_at, finished_at, sources_discovered, sources_fetched, claims_written, events_written, warnings, error_summary",
+      "id, trigger, status, started_at, finished_at, sources_discovered, sources_fetched, sources_skipped, claims_written, events_written, companies_discovered, warnings, error_summary",
     )
     .order("started_at", { ascending: false })
     .limit(limit);
@@ -152,8 +201,10 @@ export async function getRecentRuns(limit = 5): Promise<RepositoryResult<Monitor
       finishedAt: row.finished_at,
       sourcesDiscovered: row.sources_discovered,
       sourcesFetched: row.sources_fetched,
+      sourcesSkipped: row.sources_skipped,
       claimsWritten: row.claims_written,
       eventsWritten: row.events_written,
+      companiesDiscovered: row.companies_discovered,
       warnings: row.warnings ?? [],
       errorSummary: row.error_summary,
     })),
