@@ -14,6 +14,7 @@ export type Database = {
           created_at: string
           error_class: string | null
           id: string
+          is_stub: boolean
           latency_ms: number | null
           model_name: string | null
           monitoring_run_id: string | null
@@ -27,6 +28,7 @@ export type Database = {
           created_at?: string
           error_class?: string | null
           id?: string
+          is_stub?: boolean
           latency_ms?: number | null
           model_name?: string | null
           monitoring_run_id?: string | null
@@ -40,6 +42,7 @@ export type Database = {
           created_at?: string
           error_class?: string | null
           id?: string
+          is_stub?: boolean
           latency_ms?: number | null
           model_name?: string | null
           monitoring_run_id?: string | null

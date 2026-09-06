@@ -145,19 +145,20 @@ export default async function CompanyProfilePage({ params }: PageProps<"/compani
         </div>
       ) : (
         <>
-          {/* The provenance of this data is stated plainly. Milestone 2 runs a
-              stubbed pipeline, and a reader must never have to guess whether
-              what they are looking at came from real retrieval. */}
-          <div className="mt-6">
-            <Notice tone="neutral" title="Pipeline stub data">
-              <p>
-                This profile was produced by the Milestone 2 vertical-slice pipeline using a
-                hardcoded stub payload with synthetic sources. Live retrieval and LLM extraction
-                arrive in later milestones. The evidence structure, scoring and citations are real;
-                the underlying facts are not.
-              </p>
-            </Notice>
-          </div>
+          {/* The provenance of this data is stated plainly, and it is read from
+              the run that actually produced it - never hard-coded - so a real
+              pipeline run can never be mislabelled stub data, or the reverse. */}
+          {profile.assessment?.isStub ? (
+            <div className="mt-6">
+              <Notice tone="neutral" title="Pipeline stub data">
+                <p>
+                  This profile was produced by the Milestone 2 vertical-slice pipeline using a
+                  hardcoded stub payload with synthetic sources. The evidence structure, scoring and
+                  citations are real; the underlying facts are not.
+                </p>
+              </Notice>
+            </div>
+          ) : null}
 
           <FundamentalsSection fundamentals={profile.fundamentals} metrics={profile.metrics} />
           <AssessmentSection assessment={profile.assessment} evidence={profile.evidence} />

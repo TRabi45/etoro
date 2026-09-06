@@ -111,6 +111,12 @@ export interface RawAssessmentRow {
   unknowns: string[];
   created_at: string;
   assessment_claims: { claim_id: string; role: string }[];
+  /**
+   * Null only if the run that wrote this assessment was deleted out from under
+   * it, which the schema does not allow (`agent_run_id` restricts delete) - in
+   * practice this is always present.
+   */
+  agent_runs: { is_stub: boolean } | null;
 }
 
 export interface RawScoreRow {
@@ -195,6 +201,13 @@ export interface AssessmentView {
   unknowns: string[];
   /** Citation numbers per conclusion, e.g. why_now -> [2]. */
   citationsByRole: Record<string, number[]>;
+  /**
+   * True only for a deliberately synthetic run (the Milestone 2 vertical-slice
+   * stub payload). Drives whether the UI's stub notice renders - real pipeline
+   * research must never be labelled stub data, and stub data must never look
+   * live.
+   */
+  isStub: boolean;
 }
 
 export interface ScoreView {
@@ -495,6 +508,7 @@ export function mapCompanyProfile(
         risks: rows.assessment.risks,
         counterThesis: rows.assessment.counter_thesis,
         unknowns: rows.assessment.unknowns,
+        isStub: rows.assessment.agent_runs?.is_stub ?? false,
         citationsByRole: groupCitations(
           rows.assessment.assessment_claims.map((link) => ({
             key: link.role,
@@ -636,7 +650,7 @@ export async function getCompanyProfileWithEvidence(
       client
         .from("assessments")
         .select(
-          "id, thesis_version, path, strategic_fit_summary, gap_closed, why_now, synergies, risks, counter_thesis, unknowns, created_at, assessment_claims(claim_id, role)",
+          "id, thesis_version, path, strategic_fit_summary, gap_closed, why_now, synergies, risks, counter_thesis, unknowns, created_at, assessment_claims(claim_id, role), agent_runs(is_stub)",
         )
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })

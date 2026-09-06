@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mapCompanyProfile } from "@/src/db/repositories/company-profile";
 import { evidencePacketSchema } from "@/src/validation/evidence-packet";
 import {
+  ASSESSMENT_ROW,
   CLAIM_REVENUE_UNKNOWN,
   CLAIM_USERS_HIGH,
   CLAIM_USERS_LOW,
@@ -40,6 +41,20 @@ describe("mapCompanyProfile", () => {
     expect(profile.score?.upperBound).toBe(84);
     expect(profile.fundamentals?.evidenceCoverage).toBe(0.93);
     expect(profile.assessment?.counterThesis).toBe("Reproducible in-house.");
+  });
+
+  it("reads stub provenance from the run that produced the assessment, never hard-coded", () => {
+    // A real pipeline run must never be labelled stub data, and stub data must
+    // never look live - so this has to come from `agent_runs.is_stub`, not
+    // from a constant, and the mapper has to reflect either value it is given.
+    const real = mapCompanyProfile(fullProfileRows(), NOW);
+    expect(real.assessment?.isStub).toBe(false);
+
+    const stub = mapCompanyProfile(
+      { ...fullProfileRows(), assessment: { ...ASSESSMENT_ROW, agent_runs: { is_stub: true } } },
+      NOW,
+    );
+    expect(stub.assessment?.isStub).toBe(true);
   });
 
   it("produces an evidence packet that satisfies its own schema", () => {

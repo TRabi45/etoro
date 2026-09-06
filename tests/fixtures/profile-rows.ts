@@ -185,6 +185,7 @@ export const ASSESSMENT_ROW: RawAssessmentRow = {
   id: "ffffffff-0000-4000-8000-000000000001",
   thesis_version: "v0.2-test",
   path: "tuck_in",
+  agent_runs: { is_stub: false },
   strategic_fit_summary: "Fits the wealth theme.",
   gap_closed: "Portfolio aggregation.",
   why_now: "A round has just closed.",

@@ -101,6 +101,7 @@ export async function runVerticalSlice(
     promptVersion: null,
     // No LLM in this milestone. Recorded as null rather than invented.
     modelName: null,
+    isStub: payload.provenance === "stub",
   });
 
   try {

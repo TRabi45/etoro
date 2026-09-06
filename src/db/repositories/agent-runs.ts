@@ -21,6 +21,13 @@ export interface StartAgentRunInput {
    */
   modelName?: string | null;
   monitoringRunId?: string | null;
+  /**
+   * True only for a deliberately synthetic run, such as the Milestone 2
+   * vertical-slice stub payload. Defaults to false - the honest default for
+   * a run pipeline is real, not the reverse - so every ordinary call site
+   * needs no change.
+   */
+  isStub?: boolean;
 }
 
 export async function startAgentRun(
@@ -34,6 +41,7 @@ export async function startAgentRun(
       prompt_version: input.promptVersion ?? null,
       model_name: input.modelName ?? null,
       monitoring_run_id: input.monitoringRunId ?? null,
+      is_stub: input.isStub ?? false,
       status: "running",
     })
     .select("id")
