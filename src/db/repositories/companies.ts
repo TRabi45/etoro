@@ -1,6 +1,11 @@
 import { createPublicClient } from "@/src/db/client";
 import type { RepositoryResult } from "@/src/db/repositories/result";
-import type { EnablingLayer, RecordOrigin, StrategicTheme } from "@/src/config/taxonomy";
+import type {
+  EnablingLayer,
+  LifecycleStatus,
+  RecordOrigin,
+  StrategicTheme,
+} from "@/src/config/taxonomy";
 
 /**
  * Company repository.
@@ -25,6 +30,7 @@ export interface CompanyListItem {
   themeTags: StrategicTheme[];
   enablingLayers: EnablingLayer[];
   recordOrigin: RecordOrigin;
+  lifecycleStatus: LifecycleStatus;
   /**
    * True when this row is still identity with nothing researched behind it.
    *
@@ -82,6 +88,12 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
     .select(
       "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at, assessments(id), claims(count), events(count)",
     )
+    // A screened-out row was never a target - a product, an investor, a
+    // duplicate. A precedent is a real company that is not available. Neither
+    // belongs in a list of candidates; both stay in the database, queryable by
+    // whatever eventually gives precedents their own view (section 20's "a
+    // competitor deal is a trigger, not a score" needs them to still exist).
+    .not("lifecycle_status", "in", "(screened_out,precedent)")
     .order("canonical_name", { ascending: true });
 
   if (error) {
@@ -103,6 +115,7 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
       themeTags: row.theme_tags ?? [],
       enablingLayers: row.enabling_layers ?? [],
       recordOrigin: row.record_origin,
+      lifecycleStatus: row.lifecycle_status,
       isResearchPending: (row.assessments ?? []).length === 0,
       claimCount: readCount(row.claims),
       eventCount: readCount(row.events),

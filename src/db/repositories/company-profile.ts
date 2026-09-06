@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/src/db/client";
+import { getActiveScoringModelId } from "@/src/db/repositories/scoring-models";
 import type { RepositoryResult } from "@/src/db/repositories/result";
 import type {
   EvidencePacket,
@@ -578,13 +579,16 @@ export async function getCompanyProfileWithEvidence(
   }
   const client = connection.client;
 
-  const companyResult = await client
-    .from("companies")
-    .select(
-      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, updated_at",
-    )
-    .eq("slug", slug)
-    .maybeSingle();
+  const [companyResult, activeModelResult] = await Promise.all([
+    client
+      .from("companies")
+      .select(
+        "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, updated_at",
+      )
+      .eq("slug", slug)
+      .maybeSingle(),
+    getActiveScoringModelId(client),
+  ]);
 
   if (companyResult.error) {
     return { ok: false, problem: { kind: "database", message: companyResult.error.message } };
@@ -592,8 +596,17 @@ export async function getCompanyProfileWithEvidence(
   if (!companyResult.data) {
     return { ok: true, data: null };
   }
+  if (!activeModelResult.ok) {
+    return { ok: false, problem: activeModelResult.problem };
+  }
 
   const companyId = companyResult.data.id;
+  const activeModelId = activeModelResult.data;
+  // No model has ever been published, so there is nothing that could be "the
+  // current score" - a query still runs, filtered on an id no row can have,
+  // rather than branching the shape of this function on whether scoring has
+  // started yet.
+  const scoreModelFilter = activeModelId ?? "00000000-0000-0000-0000-000000000000";
 
   const [claimsResult, metricsResult, fundamentalsResult, assessmentResult, scoreResult] =
     await Promise.all([
@@ -635,6 +648,11 @@ export async function getCompanyProfileWithEvidence(
           "id, model_version, positive_normalized, weighted_coverage, lower_bound, upper_bound, recommendation, best_route, second_best_route, buy_beats_alternatives, gates, blocking_gates, calculated_at, input_snapshot",
         )
         .eq("company_id", companyId)
+        // Only a score from the active model is "the" score. Without this, a
+        // company scored under v0.2 and never re-scored under v0.3 would still
+        // show its old score - the newest row for that company, just not under
+        // the current model.
+        .eq("scoring_model_id", scoreModelFilter)
         .order("calculated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),

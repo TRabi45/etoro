@@ -1,5 +1,6 @@
 import type { TypedSupabaseClient } from "@/src/db/client";
 import { toJson } from "@/src/db/json";
+import type { RepositoryResult } from "@/src/db/repositories/result";
 import { RepositoryWriteError } from "@/src/db/repositories/result";
 import {
   canonicalJson,
@@ -136,4 +137,34 @@ export async function ensureScoringModel(
     );
   }
   return data.id;
+}
+
+/**
+ * The id of the currently active global scoring model, or `null` when none has
+ * been published yet (a database where nothing has been scored at all).
+ *
+ * Every reader of "the score" has to go through this rather than sorting by
+ * `calculated_at` alone. Timestamp order is not model order: a row scored under
+ * a superseded model is still the newest by clock time for as long as nothing
+ * has been re-scored under the version that replaced it, which is exactly how a
+ * stale v0.2 row could win a "latest score" query that only orders by date.
+ *
+ * `path` stays null here rather than becoming a parameter - v0.3 is one global
+ * model (section 26), and the per-path scorecards that would have needed one
+ * are the design this replaced.
+ */
+export async function getActiveScoringModelId(
+  client: TypedSupabaseClient,
+): Promise<RepositoryResult<string | null>> {
+  const { data, error } = await client
+    .from("scoring_models")
+    .select("id")
+    .is("path", null)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, problem: { kind: "database", message: error.message } };
+  }
+  return { ok: true, data: data?.id ?? null };
 }

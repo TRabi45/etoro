@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/src/db/client";
+import { getActiveScoringModelId } from "@/src/db/repositories/scoring-models";
 import type { RepositoryResult } from "@/src/db/repositories/result";
 import type {
   MaState,
@@ -55,8 +56,14 @@ interface ScoreRow {
   weighted_coverage: number;
   lower_bound: number | null;
   upper_bound: number | null;
-  path: TargetPath | null;
   calculated_at: string;
+  scoring_model_id: string;
+}
+
+interface AssessmentRow {
+  id: string;
+  path: TargetPath;
+  created_at: string;
 }
 
 export async function searchTargets(
@@ -67,11 +74,20 @@ export async function searchTargets(
     return { ok: false, problem: connection.problem };
   }
 
+  const activeModel = await getActiveScoringModelId(connection.client);
+  if (!activeModel.ok) {
+    return { ok: false, problem: activeModel.problem };
+  }
+  const activeModelId = activeModel.data;
+
   let query = connection.client
     .from("companies")
     .select(
-      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, path, calculated_at), assessments(id)",
-    );
+      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, created_at)",
+    )
+    // Screened-out rows were never targets; precedents are real but unavailable.
+    // Neither belongs in a ranked target search.
+    .not("lifecycle_status", "in", "(screened_out,precedent)");
 
   if (filters.geography) {
     // Matched case-insensitively against the recorded headquarters country.
@@ -91,11 +107,23 @@ export async function searchTargets(
   }
 
   const summaries: TargetSummary[] = (data ?? []).map((row) => {
-    // The newest score wins; earlier ones are history, not competing answers.
-    const scores = ((row.scores ?? []) as ScoreRow[])
-      .slice()
+    // Only a score from the active model is a candidate. A row scored under a
+    // superseded model is still the newest by timestamp for as long as nothing
+    // has re-scored it since, which is exactly how a stale v0.2 score could
+    // otherwise win this ranking.
+    const currentScores = ((row.scores ?? []) as ScoreRow[])
+      .filter((score) => score.scoring_model_id === activeModelId)
       .sort((left, right) => right.calculated_at.localeCompare(left.calculated_at));
-    const latest = scores[0] ?? null;
+    const latestScore = currentScores[0] ?? null;
+
+    // Platform/Tuck-in/Hybrid is the assessment's classification (section 26
+    // note in the ADR: a classification, never a second score), so it comes
+    // from the assessment row, not from `scores` - which no longer carries a
+    // path at all under the one global v0.3 model.
+    const assessments = ((row.assessments ?? []) as AssessmentRow[])
+      .slice()
+      .sort((left, right) => right.created_at.localeCompare(left.created_at));
+    const latestAssessment = assessments[0] ?? null;
 
     return {
       slug: row.slug,
@@ -105,13 +133,13 @@ export async function searchTargets(
       themeTags: row.theme_tags ?? [],
       hqCountry: row.hq_country,
       maState: row.ma_state,
-      path: latest?.path ?? null,
-      normalizedScore: latest?.final_score ?? null,
-      coverage: latest?.weighted_coverage ?? null,
-      lowerBound: latest?.lower_bound ?? null,
-      upperBound: latest?.upper_bound ?? null,
-      recommendation: latest?.recommendation ?? null,
-      hasResearch: ((row.assessments ?? []) as { id: string }[]).length > 0,
+      path: latestAssessment?.path ?? null,
+      normalizedScore: latestScore?.final_score ?? null,
+      coverage: latestScore?.weighted_coverage ?? null,
+      lowerBound: latestScore?.lower_bound ?? null,
+      upperBound: latestScore?.upper_bound ?? null,
+      recommendation: latestScore?.recommendation ?? null,
+      hasResearch: assessments.length > 0,
     };
   });
 
