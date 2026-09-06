@@ -74,9 +74,24 @@ export function CompanyList({ companies }: { companies: CompanyListItem[] }) {
               ))}
           </div>
 
-          {company.isResearchPending ? (
+          {/* Three states, not two.
+              The card used to print "Bootstrap identity - research pending" for
+              anything without an assessment, which mislabelled every company the
+              monitoring pipeline discovered as a hand-seeded identity - and told
+              the reader nothing was known about a company the pipeline had
+              already collected a dozen sourced claims on. Provenance and
+              emptiness are separate facts and the card now says both. */}
+          {company.isResearchPending && company.recordOrigin === "bootstrap_identity" ? (
             <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium text-amber-700">
               Bootstrap identity — research pending
+            </p>
+          ) : company.isResearchPending ? (
+            <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium text-slate-600">
+              <span className="font-semibold text-slate-700">Discovered by monitoring</span> —{" "}
+              {company.claimCount === 0 && company.eventCount === 0
+                ? "named in a source, nothing recorded yet"
+                : `${company.claimCount} claim${company.claimCount === 1 ? "" : "s"}, ${company.eventCount} event${company.eventCount === 1 ? "" : "s"}`}
+              . Not scored: a score needs fundamentals, which news does not establish.
             </p>
           ) : (
             <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium">

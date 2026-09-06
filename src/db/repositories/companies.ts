@@ -35,7 +35,33 @@ export interface CompanyListItem {
    * existed.
    */
   isResearchPending: boolean;
+  /**
+   * How much the monitoring pipeline has gathered about this company.
+   *
+   * A discovered company has no assessment and no score - news does not
+   * establish fundamentals - but it is not empty either. Without these counts
+   * the list could only say "research pending", which reads as "nothing is
+   * known" for a company the pipeline has already collected a dozen sourced
+   * claims about.
+   */
+  claimCount: number;
+  eventCount: number;
   updatedAt: string;
+}
+
+/**
+ * Reads a PostgREST aggregate count.
+ *
+ * `claims(count)` comes back as `[{ count: n }]`, or as an empty array when
+ * there are none. Typed loosely because the generated types describe the
+ * embedded rows rather than the aggregate.
+ */
+function readCount(value: unknown): number {
+  if (Array.isArray(value)) {
+    const first = value[0] as { count?: unknown } | undefined;
+    return typeof first?.count === "number" ? first.count : 0;
+  }
+  return 0;
 }
 
 /**
@@ -54,7 +80,7 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
   const { data, error } = await connection.client
     .from("companies")
     .select(
-      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at, assessments(id)",
+      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at, assessments(id), claims(count), events(count)",
     )
     .order("canonical_name", { ascending: true });
 
@@ -78,6 +104,8 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
       enablingLayers: row.enabling_layers ?? [],
       recordOrigin: row.record_origin,
       isResearchPending: (row.assessments ?? []).length === 0,
+      claimCount: readCount(row.claims),
+      eventCount: readCount(row.events),
       updatedAt: row.updated_at,
     })),
   };
