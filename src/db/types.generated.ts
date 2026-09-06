@@ -362,6 +362,7 @@ export type Database = {
           description: string | null
           discovery_reason: string | null
           enabling_layers: Database["public"]["Enums"]["enabling_layer"][]
+          entity_role: Database["public"]["Enums"]["entity_role"]
           hq_country: string | null
           id: string
           incorporation_country: string | null
@@ -372,6 +373,8 @@ export type Database = {
           path: Database["public"]["Enums"]["target_path"] | null
           primary_domain: string | null
           record_origin: Database["public"]["Enums"]["record_origin"]
+          screen_reason: string | null
+          screened_at: string | null
           slug: string
           theme_tags: Database["public"]["Enums"]["strategic_theme"][]
           updated_at: string
@@ -383,6 +386,7 @@ export type Database = {
           description?: string | null
           discovery_reason?: string | null
           enabling_layers?: Database["public"]["Enums"]["enabling_layer"][]
+          entity_role?: Database["public"]["Enums"]["entity_role"]
           hq_country?: string | null
           id?: string
           incorporation_country?: string | null
@@ -393,6 +397,8 @@ export type Database = {
           path?: Database["public"]["Enums"]["target_path"] | null
           primary_domain?: string | null
           record_origin: Database["public"]["Enums"]["record_origin"]
+          screen_reason?: string | null
+          screened_at?: string | null
           slug: string
           theme_tags?: Database["public"]["Enums"]["strategic_theme"][]
           updated_at?: string
@@ -404,6 +410,7 @@ export type Database = {
           description?: string | null
           discovery_reason?: string | null
           enabling_layers?: Database["public"]["Enums"]["enabling_layer"][]
+          entity_role?: Database["public"]["Enums"]["entity_role"]
           hq_country?: string | null
           id?: string
           incorporation_country?: string | null
@@ -414,6 +421,8 @@ export type Database = {
           path?: Database["public"]["Enums"]["target_path"] | null
           primary_domain?: string | null
           record_origin?: Database["public"]["Enums"]["record_origin"]
+          screen_reason?: string | null
+          screened_at?: string | null
           slug?: string
           theme_tags?: Database["public"]["Enums"]["strategic_theme"][]
           updated_at?: string
@@ -1511,6 +1520,14 @@ export type Database = {
         | "b2b_saas"
         | "mixed"
       enabling_layer: "ai" | "data" | "community" | "none"
+      entity_role:
+        | "operating_company"
+        | "product_or_brand"
+        | "investor"
+        | "industry_body"
+        | "government_or_regulator"
+        | "individual"
+        | "unknown"
       event_category:
         | "acquisition"
         | "funding"
@@ -1568,6 +1585,8 @@ export type Database = {
         | "under_review"
         | "active_candidate"
         | "rejected"
+        | "screened_out"
+        | "precedent"
       ma_state:
         | "independent"
         | "strategic_investor"
@@ -1833,6 +1852,15 @@ export const Constants = {
         "mixed",
       ],
       enabling_layer: ["ai", "data", "community", "none"],
+      entity_role: [
+        "operating_company",
+        "product_or_brand",
+        "investor",
+        "industry_body",
+        "government_or_regulator",
+        "individual",
+        "unknown",
+      ],
       event_category: [
         "acquisition",
         "funding",
@@ -1894,6 +1922,8 @@ export const Constants = {
         "under_review",
         "active_candidate",
         "rejected",
+        "screened_out",
+        "precedent",
       ],
       ma_state: [
         "independent",

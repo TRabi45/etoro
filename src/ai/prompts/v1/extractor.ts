@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EVENT_CATEGORIES, MATERIALITY_LEVELS } from "@/src/config/taxonomy";
+import { ENTITY_ROLES, EVENT_CATEGORIES, MATERIALITY_LEVELS } from "@/src/config/taxonomy";
 import { stripDelimiters, UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools/untrusted";
 
 /**
@@ -27,7 +27,7 @@ import { stripDelimiters, UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools
  * from the same sentence would be a guess wearing a controlled value's clothes.
  */
 
-export const EXTRACTOR_PROMPT_VERSION = "extractor/v4";
+export const EXTRACTOR_PROMPT_VERSION = "extractor/v5";
 
 /** One thing that happened, as reported by this document. */
 export const extractedEventSchema = z.object({
@@ -84,6 +84,25 @@ export const extractedClaimSchema = z.object({
     .nullable(),
 });
 
+/**
+ * One financial-services entity the document establishes, and what kind of thing
+ * it is.
+ *
+ * The role is asked for here rather than inferred later because the document is
+ * the only place the answer exists. An article says "Apple Pay added support
+ * for..." and "the round was led by Andreessen Horowitz"; both are financial
+ * services, and neither is a company eToro could buy. Reading the name without
+ * the role is what put a payment product and a venture fund into the target
+ * universe alongside real candidates.
+ *
+ * Section 32 orders this before assessment: "Do not perform full scoring when
+ * identity or basic fit is unresolved."
+ */
+export const fintechEntitySchema = z.object({
+  name: z.string().min(1).max(200),
+  role: z.enum(ENTITY_ROLES),
+});
+
 export const extractedPayloadSchema = z.object({
   entities_mentioned: z.array(z.string().min(1).max(200)).max(30),
   /**
@@ -100,7 +119,7 @@ export const extractedPayloadSchema = z.object({
    * so a passing mention of a bank in an article about something else does not
    * qualify it.
    */
-  fintech_entities: z.array(z.string().min(1).max(200)).max(30),
+  fintech_entities: z.array(fintechEntitySchema).max(30),
   // Lower than the original 20/40. Those caps let one news article produce 23
   // claims and 9 events, which took 73 seconds to generate and blew the
   // extraction timeout - and the 23rd claim from a news story is noise anyway.
@@ -162,9 +181,20 @@ This list decides which companies get added to a monitored acquisition universe,
 
 - Include a company only if the document shows what it does in financial services. A name appearing in a list, a quote, or a comparison is not evidence of its business.
 - Do not include a company because you happen to know it is a fintech. The test is what this document establishes.
-- Do not include the publisher of the article, a news outlet, a research firm, an industry association, a regulator, or a government body. They report on the market; they are not targets in it.
 - A retailer, airline, restaurant chain or consumer brand that merely accepts payments is not a financial services company. If the only connection is that money changed hands, leave it out.
 - Returning an empty list is normal and correct for most articles.
+
+Each entry carries a \`role\` saying what kind of thing it is. Get this right: a downstream step decides whether something can be an acquisition target at all, and it can only be as accurate as this field.
+
+- \`operating_company\` - a business that sells a product or service. This is the only role that can become a target.
+- \`product_or_brand\` - a product, app, service or brand name rather than the company behind it. Apple Pay is a product of Apple Inc; Zelle is a service. If the document names the operating company too, list that separately as its own entry.
+- \`investor\` - a venture fund, private equity firm, corporate venture arm, bank acting as an investor, or angel. An investor named as leading or joining a round is a party to the story, not its subject.
+- \`industry_body\` - a trade association, standards body, consortium or research institute.
+- \`government_or_regulator\` - a regulator, central bank, ministry or public agency.
+- \`individual\` - a person. Founders, executives and analysts are people, not entities to acquire.
+- \`unknown\` - the document does not make it clear. Use this rather than guessing; a wrong role is worse than an admitted gap, because the gap is visible and the wrong answer is not.
+
+Do not include the publisher of the article or a news outlet at all - not even with a role. They report on the market; they are not in it.
 
 ## Rules
 

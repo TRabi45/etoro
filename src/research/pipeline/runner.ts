@@ -13,6 +13,8 @@ import { EXTRACTOR_PROMPT_VERSION, type ExtractedPayload } from "@/src/ai/prompt
 import { resolveEntity } from "@/src/research/pipeline/identity";
 import { normalizeEntityName } from "@/src/validation/identity";
 import { createDiscoveredCompany } from "@/src/research/pipeline/discovery";
+import { screenCompany } from "@/src/domain/screening/early-screen";
+import type { EntityRole } from "@/src/config/taxonomy";
 import { fetchSource, type FetchOutcome } from "@/src/research/sources/fetcher";
 import {
   DEFAULT_FEEDS,
@@ -225,18 +227,25 @@ async function processOneSource(
       .filter((name) => name !== ""),
   );
 
-  const eligibleForDiscovery = new Set(
-    payload.fintech_entities
-      .filter((name) => !publisherNames.has(normalizeEntityName(name)))
-      .map((name) => normalizeEntityName(name)),
-  );
+  const roleByName = new Map<string, EntityRole>();
+  for (const entity of payload.fintech_entities) {
+    const normalized = normalizeEntityName(entity.name);
+    if (normalized !== "" && !publisherNames.has(normalized)) {
+      roleByName.set(normalized, entity.role);
+    }
+  }
 
-  const rejected = payload.fintech_entities.filter((name) =>
-    publisherNames.has(normalizeEntityName(name)),
-  );
+  const rejected = payload.fintech_entities
+    .map((entity) => entity.name)
+    .filter((name) => publisherNames.has(normalizeEntityName(name)));
   if (rejected.length > 0) {
     warnings.push(`Refused to record the publisher as a target: ${rejected.join(", ")}.`);
   }
+
+  // Section 32's early screen, counted rather than warned per entity. A busy
+  // article names several investors and products, and one warning each would
+  // bury the warnings that mean something.
+  const screenedOut = new Map<string, string>();
 
   // --- Step 6b: resolve identities ---------------------------------------
   // Resolved once per distinct name, then reused, so the same article does not
@@ -268,7 +277,24 @@ async function processOneSource(
     // is recorded in the source text and goes no further. Nothing is lost -
     // whatever was said about it stays in the article - and the universe stays
     // a list of plausible targets.
-    if (!eligibleForDiscovery.has(normalizeEntityName(entityName))) {
+    const role = roleByName.get(normalizeEntityName(entityName));
+    if (role === undefined) {
+      resolutionByName.set(entityName, null);
+      return null;
+    }
+
+    // Section 32 puts the screen before anything expensive, and before the row
+    // exists. A product, an investor or an unclassified name is not written and
+    // then marked; it never enters the universe, which is what "First remove"
+    // means. Whatever the article said about it stays in the article.
+    const screen = screenCompany({
+      name: entityName,
+      entityRole: role,
+      maState: null,
+      parentCompanyId: null,
+    });
+    if (screen.verdict !== "pass") {
+      screenedOut.set(entityName, screen.explanation);
       resolutionByName.set(entityName, null);
       return null;
     }
@@ -277,6 +303,7 @@ async function processOneSource(
       canonicalName: entityName,
       discoveryReason: `Named in ${document.finalUrl} during monitoring as a financial-services company.`,
       agentRunId,
+      entityRole: role,
     });
 
     if (!created.ok) {
@@ -394,6 +421,15 @@ async function processOneSource(
         `Event from ${candidate.url} failed: ${cause instanceof Error ? cause.message : "unknown error"}`,
       );
     }
+  }
+
+  if (screenedOut.size > 0) {
+    // One line, not one per entity. An article naming four investors and two
+    // products would otherwise produce six warnings that say nothing went
+    // wrong, and bury the ones that mean something did.
+    warnings.push(
+      `Screened out before entering the universe: ${[...screenedOut.keys()].join(", ")}.`,
+    );
   }
 
   return { fetched: true, claimsWritten, eventsWritten, companiesDiscovered, warnings };

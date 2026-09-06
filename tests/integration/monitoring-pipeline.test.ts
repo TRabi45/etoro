@@ -45,6 +45,7 @@ describe("entity resolution", () => {
       canonicalName: "Bit2C",
       discoveryReason: "Test fixture for the entity-resolution regression.",
       agentRunId: await newAgentRun(),
+      entityRole: "operating_company",
     });
     if (!bit2c.ok) throw new Error(bit2c.reason);
     createdCompanyIds.push(bit2c.companyId);
@@ -90,6 +91,7 @@ describe("discovered companies", () => {
       canonicalName: "Example Discovery Target",
       discoveryReason: "Named in a test article.",
       agentRunId: await newAgentRun(),
+      entityRole: "operating_company",
     });
     if (!created.ok) throw new Error(created.reason);
     createdCompanyIds.push(created.companyId);

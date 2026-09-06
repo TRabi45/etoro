@@ -43,7 +43,7 @@ describe("event taxonomy", () => {
 describe("extractedPayloadSchema", () => {
   const valid = {
     entities_mentioned: ["Bit2C"],
-    fintech_entities: ["Bit2C"],
+    fintech_entities: [{ name: "Bit2C", role: "operating_company" as const }],
     events: [
       {
         summary: "Bit2C completed the transfer of its trading platform.",

@@ -320,12 +320,47 @@ export const ALTERNATIVE_ROUTES = ["build", "partner", "invest", "monitor"] as c
 /** Marks whether a row is seed identity or something the pipeline produced. */
 export const RECORD_ORIGINS = ["bootstrap_identity", "agent_generated"] as const;
 
+/**
+ * What kind of thing a row describes, which decides whether it can be a target
+ * at all.
+ *
+ * Section 32 puts this question first: "Do not perform full scoring when
+ * identity or basic fit is unresolved." The pipeline used to skip it, and every
+ * name an article mentioned became a candidate - so a product (Apple Pay), an
+ * investor quoted in a funding round (Andreessen Horowitz) and an operating
+ * company were all presented to an analyst as the same kind of object.
+ *
+ * `unknown` is the default and is a real state, not a placeholder. A row nobody
+ * has classified must not be screened in by omission.
+ */
+export const ENTITY_ROLES = [
+  "operating_company",
+  "product_or_brand",
+  "investor",
+  "industry_body",
+  "government_or_regulator",
+  "individual",
+  "unknown",
+] as const;
+
+/**
+ * Where a company sits in the pipeline.
+ *
+ * `screened_out` and `precedent` are both exits, and they mean different things.
+ * A screened-out row was never a target - a product, an investor, a duplicate of
+ * a company already tracked. A precedent is a real operating company that is not
+ * available to buy; its events still matter, because section 20 treats a
+ * competitor's move as "a trigger, not a score", and a precedent deleted from
+ * the database takes that signal with it.
+ */
 export const LIFECYCLE_STATUSES = [
   "research_pending",
   "discovered_unreviewed",
   "under_review",
   "active_candidate",
   "rejected",
+  "screened_out",
+  "precedent",
 ] as const;
 
 export const ALIAS_KINDS = ["legal_entity", "brand", "former_name", "working_alias"] as const;
@@ -358,4 +393,5 @@ export type RecommendationState = (typeof RECOMMENDATION_STATES)[number];
 export type AlternativeRoute = (typeof ALTERNATIVE_ROUTES)[number];
 export type RecordOrigin = (typeof RECORD_ORIGINS)[number];
 export type LifecycleStatus = (typeof LIFECYCLE_STATUSES)[number];
+export type EntityRole = (typeof ENTITY_ROLES)[number];
 export type AliasKind = (typeof ALIAS_KINDS)[number];

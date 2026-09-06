@@ -1,3 +1,4 @@
+import type { EntityRole } from "@/src/config/taxonomy";
 import type { TypedSupabaseClient } from "@/src/db/client";
 
 /**
@@ -26,6 +27,15 @@ export interface CreateDiscoveredCompanyInput {
   canonicalName: string;
   discoveryReason: string;
   agentRunId: string;
+  /**
+   * What kind of entity this is, as the source document established it.
+   *
+   * Recorded at creation because it is the one moment the evidence is in hand.
+   * Asking later means asking a model about a bare name, which is how a product
+   * and a venture fund ended up in the target universe looking exactly like a
+   * company.
+   */
+  entityRole: EntityRole;
 }
 
 /** Builds a slug the schema will accept, with a suffix if the name collides. */
@@ -64,6 +74,7 @@ export async function createDiscoveredCompany(
         slug,
         record_origin: "agent_generated",
         lifecycle_status: "discovered_unreviewed",
+        entity_role: input.entityRole,
         discovery_reason: input.discoveryReason,
         agent_run_id: input.agentRunId,
       })
