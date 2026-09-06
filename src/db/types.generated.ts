@@ -479,7 +479,7 @@ export type Database = {
             foreignKeyName: "companies_tier_changed_by_run_id_fkey"
             columns: ["tier_changed_by_run_id"]
             isOneToOne: false
-            referencedRelation: "agent_runs"
+            referencedRelation: "company_research_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -734,48 +734,48 @@ export type Database = {
       }
       company_tier_transitions: {
         Row: {
-          agent_run_id: string
           company_id: string
           confidence: Database["public"]["Enums"]["confidence_level"] | null
           created_at: string
           from_tier: Database["public"]["Enums"]["research_tier"] | null
           id: string
           reason: string
+          research_run_id: string
           to_tier: Database["public"]["Enums"]["research_tier"]
         }
         Insert: {
-          agent_run_id: string
           company_id: string
           confidence?: Database["public"]["Enums"]["confidence_level"] | null
           created_at?: string
           from_tier?: Database["public"]["Enums"]["research_tier"] | null
           id?: string
           reason: string
+          research_run_id: string
           to_tier: Database["public"]["Enums"]["research_tier"]
         }
         Update: {
-          agent_run_id?: string
           company_id?: string
           confidence?: Database["public"]["Enums"]["confidence_level"] | null
           created_at?: string
           from_tier?: Database["public"]["Enums"]["research_tier"] | null
           id?: string
           reason?: string
+          research_run_id?: string
           to_tier?: Database["public"]["Enums"]["research_tier"]
         }
         Relationships: [
-          {
-            foreignKeyName: "company_tier_transitions_agent_run_id_fkey"
-            columns: ["agent_run_id"]
-            isOneToOne: false
-            referencedRelation: "agent_runs"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "company_tier_transitions_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_tier_transitions_research_run_id_fkey"
+            columns: ["research_run_id"]
+            isOneToOne: false
+            referencedRelation: "company_research_runs"
             referencedColumns: ["id"]
           },
         ]

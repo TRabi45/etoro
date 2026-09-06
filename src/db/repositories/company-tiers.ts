@@ -62,8 +62,8 @@ export interface ApplyTierDecisionInput {
   companyId: string;
   decision: TierDecision;
   confidence: ConfidenceLevel | null;
-  /** The run that made this decision, for the transition's own provenance. */
-  agentRunId: string;
+  /** The company_research_runs row that made this decision, for the transition's own provenance. */
+  researchRunId: string;
 }
 
 export interface ApplyTierDecisionResult {
@@ -91,7 +91,7 @@ export async function applyTierDecision(
       research_tier: input.decision.tier,
       research_tier_reason: input.decision.reason,
       research_tier_confidence: input.confidence,
-      tier_changed_by_run_id: input.agentRunId,
+      tier_changed_by_run_id: input.researchRunId,
     })
     .eq("id", input.companyId);
 
@@ -108,7 +108,7 @@ export async function applyTierDecision(
       to_tier: input.decision.tier,
       reason: input.decision.reason,
       confidence: input.confidence,
-      agent_run_id: input.agentRunId,
+      research_run_id: input.researchRunId,
     });
 
     if (historyError) {

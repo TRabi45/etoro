@@ -17,6 +17,16 @@ import {
   CONVERSATIONAL_AGENT_PROMPT_VERSION,
   type ConversationalAgentContext,
 } from "@/src/ai/prompts/v1/conversational-agent";
+import {
+  analystOutputSchema,
+  ANALYST_PROMPT_VERSION,
+  ANALYST_SYSTEM_PROMPT,
+  buildAnalystRequest,
+  EMPTY_ANALYST_OUTPUT,
+  type AnalystCompanyContext,
+  type AnalystDocumentContext,
+  type AnalystOutput,
+} from "@/src/ai/prompts/v1/analyst";
 
 /**
  * The AI provider adapter.
@@ -224,6 +234,71 @@ export async function extractFromSource(
  * generation itself rather than just waiting longer for it.
  */
 export const EXTRACTION_TIMEOUT_MS = 180_000;
+
+export interface AnalysisOutcome {
+  output: AnalystOutput;
+  /** Set when the model could not produce a valid output. */
+  problem: string | null;
+  model: string;
+  promptVersion: string;
+}
+
+/**
+ * How long one company's analysis may take before the run gives up on it.
+ *
+ * Longer than the Extractor's per-document budget (`EXTRACTION_TIMEOUT_MS`)
+ * because this call reasons over several documents at once and produces a
+ * much larger structured output - eight dimensions, five gates, five routes,
+ * fundamentals and assessment narrative, all cross-referencing a claims list
+ * it is generating in the same call.
+ */
+export const ANALYSIS_TIMEOUT_MS = 240_000;
+
+/**
+ * Runs the Analyst role over one company's gathered documents.
+ *
+ * Never throws, for the same reason `extractFromSource` never throws: a
+ * failed analysis costs this company's research run, not the caller. The
+ * orchestrator records the problem as a warning and finishes the run as
+ * `failed` rather than crashing whatever triggered it.
+ */
+export async function analyzeCompanyEvidence(
+  company: AnalystCompanyContext,
+  documents: { context: AnalystDocumentContext; bodyText: string }[],
+): Promise<AnalysisOutcome> {
+  const configResult = readAiConfig();
+  if (!configResult.ok) {
+    return {
+      output: EMPTY_ANALYST_OUTPUT,
+      problem: configResult.problem.message,
+      model: "unconfigured",
+      promptVersion: ANALYST_PROMPT_VERSION,
+    };
+  }
+
+  const anthropic = createAnthropic({ apiKey: configResult.config.apiKey });
+  const model = configResult.config.model;
+
+  try {
+    const result = await generateObject({
+      model: anthropic(model),
+      schema: analystOutputSchema,
+      system: ANALYST_SYSTEM_PROMPT,
+      prompt: buildAnalystRequest(company, documents),
+      maxRetries: 1,
+      abortSignal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
+    });
+
+    return { output: result.object, problem: null, model, promptVersion: ANALYST_PROMPT_VERSION };
+  } catch (cause) {
+    return {
+      output: EMPTY_ANALYST_OUTPUT,
+      problem: cause instanceof Error ? cause.message : "analysis failed",
+      model,
+      promptVersion: ANALYST_PROMPT_VERSION,
+    };
+  }
+}
 
 export interface AskAgentResult {
   text: string;
