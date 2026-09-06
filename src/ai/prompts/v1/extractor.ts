@@ -27,7 +27,7 @@ import { stripDelimiters, UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools
  * from the same sentence would be a guess wearing a controlled value's clothes.
  */
 
-export const EXTRACTOR_PROMPT_VERSION = "extractor/v3";
+export const EXTRACTOR_PROMPT_VERSION = "extractor/v4";
 
 /** One thing that happened, as reported by this document. */
 export const extractedEventSchema = z.object({
@@ -101,8 +101,14 @@ export const extractedPayloadSchema = z.object({
    * qualify it.
    */
   fintech_entities: z.array(z.string().min(1).max(200)).max(30),
-  events: z.array(extractedEventSchema).max(20),
-  claims: z.array(extractedClaimSchema).max(40),
+  // Lower than the original 20/40. Those caps let one news article produce 23
+  // claims and 9 events, which took 73 seconds to generate and blew the
+  // extraction timeout - and the 23rd claim from a news story is noise anyway.
+  // The prompt asks for the material facts; these are the backstop, set above
+  // what is asked so a slightly enthusiastic extraction is kept rather than
+  // rejected wholesale.
+  events: z.array(extractedEventSchema).max(12),
+  claims: z.array(extractedClaimSchema).max(20),
 });
 
 export type ExtractedEvent = z.infer<typeof extractedEventSchema>;
@@ -167,6 +173,7 @@ This list decides which companies get added to a monitored acquisition universe,
 - If the document contradicts something, record the contradicting claim rather than reconciling it.
 - Omit what is absent. Do not emit a claim asserting that something is unknown, and never write zero for a figure the document does not give.
 - An empty result is a valid and useful answer. A press release with no facts about a named company yields no claims.
+- Report the facts that would matter to someone deciding whether to acquire or partner with a company: what it does, what changed, money, ownership, licences, scale. Skip colour, quotes that assert nothing, and background the article gives for context. A news article rarely contains more than about ten claims worth storing, and listing every sentence buries the few that matter.
 - Return only the structured output. No commentary.`;
 
 export interface ExtractorSourceContext {

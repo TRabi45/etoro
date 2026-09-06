@@ -208,8 +208,22 @@ export async function extractFromSource(
   }
 }
 
-/** A model call that has not returned in this long is not going to help the run. */
-export const EXTRACTION_TIMEOUT_MS = 60_000;
+/**
+ * How long one extraction may take before the run gives up on it.
+ *
+ * Measured rather than guessed, after the guess cost real data. The first value
+ * was 60s, chosen because it sounded generous. A 10KB news article actually
+ * takes ~73s to extract - the cost is generating the structured output, not the
+ * provider being slow, since a plain call to the same model answers in 1.6s - so
+ * every extraction in a five-source run hit the ceiling and was discarded. The
+ * pipeline reported five honest warnings and wrote nothing, which is the
+ * failure mode this design is meant to make visible and did: the warnings were
+ * right there, saying "aborted due to timeout" five times.
+ *
+ * Paired with the smaller output caps in the extractor schema, which cut the
+ * generation itself rather than just waiting longer for it.
+ */
+export const EXTRACTION_TIMEOUT_MS = 180_000;
 
 export interface AskAgentResult {
   text: string;
