@@ -1,48 +1,72 @@
 import type { ScoreView } from "@/src/db/repositories/company-profile";
+import { CoverageBadge } from "@/components/ui/coverage-badge";
+import { RecommendationBadge } from "@/components/ui/recommendation-badge";
+import { Badge } from "@/components/ui/badge";
+import { Icon } from "@/components/ui/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { formatDateTime, humanizeToken } from "@/components/ui/format";
 
 /**
- * The score breakdown.
+ * The score, shown as arithmetic rather than as a verdict.
  *
- * Shows the arithmetic rather than the conclusion. Three numbers are rendered as
- * one statement and never separated, because the acquisition thesis is explicit
- * that separating them is a lie: "A normalized 82 at 55% coverage with a 45-90
- * range is not '82/100.' Display 82 - 55% coverage - 45-90 range."
+ * Three numbers are rendered as one statement and never separated, because the
+ * acquisition thesis is explicit that separating them is a lie: a normalized 82
+ * at 55% coverage with a 45-90 range is not "82/100".
  *
- * The range is the width of what is still unknown. A target scoring 81 on 85% of
- * the scorecard sits somewhere between 69 and 84 once the unanswered questions
- * are settled, and an analyst deciding what to research next needs that spread
- * more than they need the point estimate.
+ * The range is the width of what is still unknown - the lower bound assumes
+ * every unestablished criterion scores zero, the upper bound assumes five.
+ * Neither is a prediction, and an analyst deciding what to research next needs
+ * that spread more than they need the point estimate.
  *
- * The recommendation is a separate statement from the score, with gate status
- * beside it - a high score with an open gate is still blocked, and the gate is
- * the more decision-relevant fact.
+ * Gates are listed above the dimensions on purpose. A triggered gate overrides
+ * the score entirely, so a reader who stops after the first block has still
+ * read the most decision-relevant fact on the page.
  */
 
-const RECOMMENDATION_TONE: Record<string, string> = {
-  // Section 34's labels.
-  priority_diligence: "border-emerald-300 bg-emerald-50 text-emerald-900",
-  shortlist: "border-sky-300 bg-sky-50 text-sky-900",
-  partner: "border-sky-300 bg-sky-50 text-sky-900",
-  watch: "border-amber-300 bg-amber-50 text-amber-900",
-  do_not_advance: "border-slate-300 bg-slate-50 text-slate-700",
-  blocked: "border-red-300 bg-red-50 text-red-900",
-  // Retained so a score written under v0.2 still renders.
-  acquire: "border-emerald-300 bg-emerald-50 text-emerald-900",
-  invest: "border-sky-300 bg-sky-50 text-sky-900",
-  build: "border-slate-300 bg-slate-50 text-slate-800",
-  monitor: "border-amber-300 bg-amber-50 text-amber-900",
-  pass: "border-red-300 bg-red-50 text-red-900",
-  research_only: "border-amber-300 bg-amber-50 text-amber-900",
+const DIMENSION_STATUS: Record<
+  string,
+  { label: string; tone: "neutral" | "warning" | "muted" | "brand"; hint: string }
+> = {
+  scored: {
+    label: "Scored",
+    tone: "brand",
+    hint: "Backed by evidence and contributing its full weight.",
+  },
+  partially_scored: {
+    label: "Partial",
+    tone: "neutral",
+    hint: "Some sub-metrics are established and some are not.",
+  },
+  unknown: {
+    label: "Unknown",
+    tone: "warning",
+    hint: "Applicable, but nothing establishes it. Counted in the uncertainty range, never as zero.",
+  },
+  not_applicable: {
+    label: "Not applicable",
+    tone: "muted",
+    hint: "Does not apply to this business, so it is excluded from the applicable weight entirely.",
+  },
 };
 
-const GATE_TONE: Record<string, string> = {
-  clear: "text-slate-500",
-  unresolved: "text-amber-700",
-  triggered: "text-red-700",
-};
+export function ScoreBreakdown({ score }: { score: ScoreView | null }) {
+  if (!score) {
+    return (
+      <EmptyState
+        icon="minus"
+        title="No score under the active model"
+        nextStep={
+          <>
+            Nothing has been scored for this company under the scoring model currently in force.
+            That is different from scoring badly - a score requires evidence, and a company scored
+            under a superseded model reads as unscored here rather than showing a number nobody
+            stands behind.
+          </>
+        }
+      />
+    );
+  }
 
-export function ScoreBreakdown({ score }: { score: ScoreView }) {
-  const unscored = score.normalizedScore === null;
   const openGates = score.gates.filter((gate) => gate.state !== "clear");
   const spread =
     score.lowerBound !== null && score.upperBound !== null
@@ -50,144 +74,233 @@ export function ScoreBreakdown({ score }: { score: ScoreView }) {
       : null;
 
   return (
-    <section className="mt-8">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Deterministic score
-      </h2>
-      <p className="mt-1 text-xs text-slate-500">
-        Calculated in code from the recorded inputs under model version {score.modelVersion}. No
-        language model produces or adjusts this number.
+    <div className="flex flex-col gap-5">
+      <p className="text-body leading-relaxed text-secondary">
+        Calculated in code from the recorded inputs under model version{" "}
+        <span className="font-medium text-primary">{score.modelVersion}</span>, on{" "}
+        <span className="tabular">{formatDateTime(score.calculatedAt)}</span>. No language model
+        produces or adjusts this number.
       </p>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-baseline justify-between">
-            <span className="text-sm font-semibold text-slate-700">Normalised score</span>
-            <span className="font-mono text-3xl font-semibold text-slate-900">
-              {unscored ? "—" : score.normalizedScore?.toFixed(2)}
-            </span>
-          </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-card border border-border bg-surface p-4">
+          <h3 className="text-caption font-semibold tracking-wide text-secondary uppercase">
+            Normalised score
+          </h3>
+          <p className="tabular mt-1 text-page font-semibold text-primary">
+            {score.normalizedScore === null ? "Not scored" : score.normalizedScore.toFixed(2)}
+          </p>
 
-          <dl className="mt-3 border-t border-slate-200 pt-3 text-sm">
-            <div className="flex items-baseline justify-between py-1.5">
-              <dt className="text-slate-600">Evidence coverage</dt>
-              <dd className="font-mono text-slate-900">{(score.coverage * 100).toFixed(2)}%</dd>
+          <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-body">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-secondary">Evidence coverage</dt>
+              <dd>
+                <CoverageBadge coverage={score.coverage} />
+              </dd>
             </div>
-            <div className="flex items-baseline justify-between py-1.5">
-              <dt className="text-slate-600">Uncertainty range</dt>
-              <dd className="font-mono text-slate-900">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-secondary">Uncertainty range</dt>
+              <dd className="tabular font-medium text-primary">
                 {score.lowerBound === null || score.upperBound === null
-                  ? "—"
-                  : `${score.lowerBound.toFixed(2)} – ${score.upperBound.toFixed(2)}`}
+                  ? "Not calculated"
+                  : `${score.lowerBound.toFixed(2)} to ${score.upperBound.toFixed(2)}`}
               </dd>
             </div>
           </dl>
 
           {spread !== null && spread > 0 ? (
-            <p className="mt-2 text-xs leading-relaxed text-amber-700">
-              {spread.toFixed(0)} points of the scorecard are still unestablished. The lower bound
-              assumes every unknown scores zero, the upper bound assumes every unknown scores five.
-              Neither is a prediction.
-            </p>
-          ) : null}
-
-          {unscored ? (
-            <p className="mt-2 text-xs text-amber-700">
-              Nothing on the scorecard could be scored from the recorded evidence.
+            <p className="mt-3 text-caption leading-relaxed text-secondary">
+              <span className="tabular font-medium text-primary">{spread.toFixed(0)}</span> points
+              of the scorecard are still unestablished. The lower bound assumes every unknown scores
+              zero, the upper bound assumes every unknown scores five. Neither is a prediction.
             </p>
           ) : null}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm font-semibold text-slate-700">Recommended action</p>
-          <p
-            className={`mt-2 inline-block rounded-full border px-3 py-1 text-sm font-semibold capitalize ${
-              RECOMMENDATION_TONE[score.recommendation] ?? RECOMMENDATION_TONE.watch
-            }`}
-          >
-            {score.recommendation.replace(/_/g, " ")}
-          </p>
+        <div className="rounded-card border border-border bg-surface p-4">
+          <h3 className="text-caption font-semibold tracking-wide text-secondary uppercase">
+            Recommendation
+          </h3>
+          <div className="mt-2">
+            <RecommendationBadge recommendation={score.recommendation} />
+          </div>
 
-          {score.bestRoute ? (
-            <p className="mt-3 text-xs leading-relaxed text-slate-600">
-              The evidence supports <strong className="text-slate-800">{score.bestRoute}</strong>
-              {score.secondBestRoute ? (
-                <>
-                  , with <strong className="text-slate-800">{score.secondBestRoute}</strong> as the
-                  next-best route
-                </>
-              ) : null}
-              .{" "}
-              {score.buyBeatsAlternatives === false
-                ? "Acquiring control does not beat the alternatives on the recorded assessment."
-                : "Acquiring control outscores every alternative on the recorded assessment."}
-            </p>
-          ) : (
-            <p className="mt-3 text-xs leading-relaxed text-slate-600">
-              The action is a separate decision from the score. A strong fit score does not by
-              itself justify acquiring control.
-            </p>
-          )}
-
-          {openGates.length > 0 ? (
-            <div className="mt-3 border-t border-slate-200 pt-3">
-              <p className="text-xs font-semibold text-slate-700">Gates needing attention</p>
-              <ul className="mt-1.5 space-y-1">
-                {openGates.map((gate) => (
-                  <li key={gate.key} className="text-xs leading-relaxed">
-                    <span className={`font-medium ${GATE_TONE[gate.state]}`}>
-                      {gate.label} — {gate.state}
-                    </span>
-                    <span className="text-slate-600"> · {gate.action}</span>
-                  </li>
-                ))}
-              </ul>
+          <dl className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-body">
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-secondary">Best route</dt>
+              <dd className="font-medium text-primary">
+                {humanizeToken(score.bestRoute) ?? "Not recorded"}
+              </dd>
             </div>
-          ) : score.gates.length > 0 ? (
-            <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500">
-              All {score.gates.length} decision gates are clear.
-            </p>
-          ) : null}
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-secondary">Second best</dt>
+              <dd className="font-medium text-primary">
+                {humanizeToken(score.secondBestRoute) ?? "Not recorded"}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-secondary">Buy beats alternatives</dt>
+              <dd className="font-medium text-primary">
+                {score.buyBeatsAlternatives === null
+                  ? "Not recorded"
+                  : score.buyBeatsAlternatives
+                    ? "Yes"
+                    : "No"}
+              </dd>
+            </div>
+          </dl>
+
+          <p className="mt-3 text-caption leading-relaxed text-secondary">
+            The recommendation is a separate decision from the score, and a gate overrides both. A
+            score is not an approval.
+          </p>
         </div>
       </div>
 
-      {score.breakdown.length > 0 ? (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="w-full min-w-[34rem] text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2 font-medium">Dimension</th>
-                <th className="px-4 py-2 text-right font-medium">Weight</th>
-                <th className="px-4 py-2 text-right font-medium">Score</th>
-                <th className="px-4 py-2 text-right font-medium">Contribution</th>
-              </tr>
-            </thead>
-            <tbody>
-              {score.breakdown.map((row) => (
-                <tr key={row.key} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2 text-slate-700">{row.label}</td>
-                  <td className="px-4 py-2 text-right font-mono text-slate-500">{row.weight}</td>
-                  <td className="px-4 py-2 text-right">
-                    {/* An unscored dimension is never shown as a zero: unknown
-                        stays in the coverage denominator, not-applicable leaves
-                        the calculation entirely, and both say so by name. */}
-                    {row.status === "scored" || row.status === "partially_scored" ? (
-                      <span className="font-mono text-slate-900">{row.score}</span>
-                    ) : row.status === "unknown" ? (
-                      <span className="text-xs font-medium text-amber-700">Unknown</span>
-                    ) : (
-                      <span className="text-xs font-medium text-slate-400">Not applicable</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-slate-700">
-                    {row.contribution === null ? "—" : row.contribution.toFixed(2)}
-                  </td>
+      <section aria-labelledby="gates-heading">
+        <h3 id="gates-heading" className="text-section font-semibold text-primary">
+          Hard gates
+        </h3>
+        <p className="mt-1 text-body text-secondary">
+          A triggered gate blocks the target whatever the score says. An unresolved gate does not
+          block, but denies priority diligence until it is settled.
+        </p>
+
+        <ul className="mt-3 flex flex-col gap-2">
+          {score.gates.length === 0 ? (
+            <li className="rounded-card border border-border bg-surface px-4 py-3 text-body text-secondary">
+              No gate outcomes were recorded with this score.
+            </li>
+          ) : null}
+
+          {score.gates.map((gate) => (
+            <li
+              key={gate.key}
+              className={`rounded-card border px-4 py-3 ${
+                gate.state === "triggered"
+                  ? "border-danger/30 bg-danger-soft"
+                  : gate.state === "unresolved"
+                    ? "border-warning/30 bg-warning-soft"
+                    : "border-border bg-surface"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Icon
+                  name={
+                    gate.state === "triggered"
+                      ? "alert-triangle"
+                      : gate.state === "unresolved"
+                        ? "alert-circle"
+                        : "check-circle"
+                  }
+                  size={16}
+                  className={
+                    gate.state === "triggered"
+                      ? "text-danger"
+                      : gate.state === "unresolved"
+                        ? "text-warning"
+                        : "text-brand"
+                  }
+                />
+                <span className="text-body font-medium text-primary">{gate.label}</span>
+                <Badge
+                  tone={
+                    gate.state === "triggered"
+                      ? "danger"
+                      : gate.state === "unresolved"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {humanizeToken(gate.state)}
+                </Badge>
+              </div>
+              <p className="mt-1.5 text-body leading-relaxed text-secondary">{gate.action}</p>
+            </li>
+          ))}
+        </ul>
+
+        {openGates.length === 0 && score.gates.length > 0 ? (
+          <p className="mt-2 text-caption text-secondary">
+            Every gate is clear, so the score band alone decides the recommendation.
+          </p>
+        ) : null}
+      </section>
+
+      <section aria-labelledby="dimensions-heading">
+        <h3 id="dimensions-heading" className="text-section font-semibold text-primary">
+          Dimension breakdown
+        </h3>
+        <p className="mt-1 text-body text-secondary">
+          One global weight set. Contribution is the dimension&rsquo;s score multiplied by its
+          weight; an unknown dimension contributes nothing and widens the range rather than scoring
+          zero.
+        </p>
+
+        <div className="mt-3 overflow-x-auto rounded-card border border-border bg-surface">
+          {score.breakdown.length === 0 ? (
+            <p className="px-4 py-3 text-body text-secondary">
+              No per-dimension breakdown was stored with this score.
+            </p>
+          ) : (
+            <table className="w-full min-w-[36rem] border-collapse text-table">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th scope="col" className="px-4 py-2.5 font-medium text-secondary">
+                    Dimension
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 font-medium text-secondary">
+                    Weight
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 font-medium text-secondary">
+                    Score
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 font-medium text-secondary">
+                    Contribution
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium text-secondary">
+                    Status
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {score.breakdown.map((row) => {
+                  const status = DIMENSION_STATUS[row.status] ?? DIMENSION_STATUS.unknown;
+                  return (
+                    <tr key={row.key} className="border-b border-border last:border-b-0">
+                      <th scope="row" className="px-4 py-2.5 text-left font-medium text-primary">
+                        {row.label}
+                      </th>
+                      <td className="tabular px-3 py-2.5 text-secondary">
+                        {(row.weight * 100).toFixed(0)}%
+                      </td>
+                      <td className="tabular px-3 py-2.5 text-primary">
+                        {row.score === null ? (
+                          <span className="text-tertiary">Not scored</span>
+                        ) : (
+                          row.score.toFixed(2)
+                        )}
+                      </td>
+                      <td className="tabular px-3 py-2.5 text-primary">
+                        {row.contribution === null ? (
+                          <span className="text-tertiary">None</span>
+                        ) : (
+                          row.contribution.toFixed(2)
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Badge tone={status.tone} title={status.hint}>
+                          {status.label}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
-      ) : null}
-    </section>
+      </section>
+    </div>
   );
 }

@@ -1,6 +1,8 @@
-import type { TypedSupabaseClient } from "@/src/db/client";
+import { createPublicClient, type TypedSupabaseClient } from "@/src/db/client";
 import { toJson } from "@/src/db/json";
-import { RepositoryWriteError } from "@/src/db/repositories/result";
+import { getActiveScoringModelId } from "@/src/db/repositories/scoring-models";
+import { RepositoryWriteError, type RepositoryResult } from "@/src/db/repositories/result";
+import type { RecommendationState } from "@/src/config/taxonomy";
 import type { ScoringInput, ScoringResult } from "@/src/domain/scoring/types";
 
 /**
@@ -87,4 +89,101 @@ export async function insertScore(
     );
   }
   return { scoreId: data.id, created: true };
+}
+
+/**
+ * Every score ever written for a company, newest first.
+ *
+ * Used by the profile's activity timeline, where the question is not "what is
+ * the score" but "when did it change and why". Rows written under a superseded
+ * model are deliberately included: they are immutable historical records, and
+ * the timeline is the one place where showing them is correct - the reader is
+ * asking what happened, and "this was scored under v0.2 in August" is part of
+ * the answer. Every row carries its own model version, so a superseded score is
+ * never mistaken for the current one.
+ */
+export interface ScoreHistoryEntry {
+  id: string;
+  modelVersion: string;
+  normalizedScore: number | null;
+  coverage: number;
+  recommendation: RecommendationState;
+  blockingGates: string[];
+  calculatedAt: string;
+  /** True for the row that is currently the company's answer. */
+  isCurrent: boolean;
+}
+
+export async function getScoreHistory(
+  slug: string,
+): Promise<RepositoryResult<ScoreHistoryEntry[]>> {
+  const connection = createPublicClient();
+  if (!connection.ok) {
+    return { ok: false, problem: connection.problem };
+  }
+
+  const company = await connection.client
+    .from("companies")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (company.error) {
+    return { ok: false, problem: { kind: "database", message: company.error.message } };
+  }
+  if (!company.data) {
+    return { ok: true, data: [] };
+  }
+
+  const activeModel = await getActiveScoringModelId(connection.client);
+  if (!activeModel.ok) {
+    return { ok: false, problem: activeModel.problem };
+  }
+
+  const { data, error } = await connection.client
+    .from("scores")
+    .select(
+      "id, model_version, positive_normalized, weighted_coverage, recommendation, blocking_gates, calculated_at, scoring_model_id",
+    )
+    .eq("company_id", company.data.id)
+    .order("calculated_at", { ascending: false });
+
+  if (error) {
+    return { ok: false, problem: { kind: "database", message: error.message } };
+  }
+
+  type Row = {
+    id: string;
+    model_version: string;
+    positive_normalized: number | null;
+    weighted_coverage: number;
+    recommendation: RecommendationState;
+    blocking_gates: string[] | null;
+    calculated_at: string;
+    scoring_model_id: string;
+  };
+
+  // Only the newest row from the active model is "current"; everything else is
+  // history, including a newer row written under a model that is no longer in
+  // force.
+  let seenCurrent = false;
+  const entries = ((data ?? []) as Row[]).map((row) => {
+    const fromActiveModel = row.scoring_model_id === activeModel.data;
+    const isCurrent = fromActiveModel && !seenCurrent;
+    if (isCurrent) {
+      seenCurrent = true;
+    }
+    return {
+      id: row.id,
+      modelVersion: row.model_version,
+      normalizedScore: row.positive_normalized,
+      coverage: row.weighted_coverage,
+      recommendation: row.recommendation,
+      blockingGates: row.blocking_gates ?? [],
+      calculatedAt: row.calculated_at,
+      isCurrent,
+    };
+  });
+
+  return { ok: true, data: entries };
 }
