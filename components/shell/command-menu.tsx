@@ -263,14 +263,21 @@ function CommandTrigger({ onOpen }: { onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex h-10 w-full max-w-xs items-center gap-2.5 rounded-control border border-border bg-surface-subtle px-3 text-body text-tertiary motion-standard transition-colors hover:border-border-strong hover:text-secondary"
+      /*
+       * Collapses to an icon button below 640px rather than disappearing.
+       * Search is one of the three things the responsive priority requires to
+       * survive at every width, alongside citations and agent access.
+       */
+      className="flex h-10 w-10 items-center justify-center rounded-control border border-border-control bg-surface-subtle text-tertiary motion-standard transition-colors hover:border-secondary hover:text-secondary sm:w-full sm:max-w-xs sm:justify-start sm:gap-2.5 sm:px-3 sm:text-body"
       aria-label="Search targets and pages"
     >
       <Icon name="search" size={16} />
-      <span className="flex-1 text-left">Search targets…</span>
+      <span className="hidden flex-1 text-left sm:block">Search targets…</span>
       {/* Rendered platform-neutral: the modifier label is resolved client-side
           after mount in `ShortcutHint` to avoid a hydration mismatch. */}
-      <ShortcutHint />
+      <span className="hidden sm:block">
+        <ShortcutHint />
+      </span>
     </button>
   );
 }

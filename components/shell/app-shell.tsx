@@ -59,16 +59,29 @@ export function AppShell({
   // corrects them after mount.
   const [isNarrow, setIsNarrow] = useState(false);
   const [agentIsDrawer, setAgentIsDrawer] = useState(false);
+  const [railForcedCollapsed, setRailForcedCollapsed] = useState(false);
 
   const pathname = usePathname();
 
   useEffect(() => {
     const narrow = window.matchMedia("(max-width: 899px)");
     const drawer = window.matchMedia("(max-width: 1199px)");
+    /*
+     * The band where the inline agent and a full-width rail cannot both fit.
+     *
+     * The layout spec asks for two things that collide between 1200 and 1343px:
+     * the agent stays an inline column above 1200, and the main content keeps at
+     * least 720px. A 224px rail plus a 400px panel needs 1344px to leave that
+     * much. Collapsing the rail to 64px in this band satisfies both - the
+     * navigation loses its labels, which is recoverable, rather than the target
+     * table losing columns, which is not.
+     */
+    const tight = window.matchMedia("(min-width: 1200px) and (max-width: 1343px)");
 
     function sync() {
       setIsNarrow(narrow.matches);
       setAgentIsDrawer(drawer.matches);
+      setRailForcedCollapsed(tight.matches);
       // An overlay that survives a resize back to desktop would leave a
       // backdrop over a layout that no longer needs one.
       if (!narrow.matches) {
@@ -84,9 +97,11 @@ export function AppShell({
     sync();
     narrow.addEventListener("change", sync);
     drawer.addEventListener("change", sync);
+    tight.addEventListener("change", sync);
     return () => {
       narrow.removeEventListener("change", sync);
       drawer.removeEventListener("change", sync);
+      tight.removeEventListener("change", sync);
     };
   }, []);
 
@@ -127,8 +142,10 @@ export function AppShell({
   const toggleAgent = useCallback(() => setAgentOpen((open) => !open), []);
 
   // Below 900px the rail is always full width when it is shown at all, so the
-  // collapse preference only applies to real column layouts.
-  const collapsed = railCollapsed && !isNarrow;
+  // collapse preference only applies to real column layouts. Between 1200 and
+  // 1343px the collapse is not a preference at all - it is what keeps the main
+  // column above its 720px floor.
+  const collapsed = (railCollapsed || railForcedCollapsed) && !isNarrow;
 
   return (
     <div className="flex h-dvh overflow-hidden">
@@ -224,7 +241,7 @@ export function AppShell({
           onClick={toggleAgent}
           aria-label="Show the intelligence panel"
           title="Show the intelligence panel"
-          className="fixed bottom-5 right-5 z-30 flex h-11 items-center gap-2 rounded-pill border border-border-strong bg-surface px-4 text-body font-medium text-primary shadow-[var(--shadow-menu)] motion-standard transition-colors hover:bg-surface-subtle"
+          className="fixed bottom-5 right-5 z-30 flex h-11 items-center gap-2 rounded-pill border border-border-control bg-surface px-4 text-body font-medium text-primary shadow-[var(--shadow-menu)] motion-standard transition-colors hover:bg-surface-subtle"
         >
           <Icon name="agent" size={18} />
           Intelligence

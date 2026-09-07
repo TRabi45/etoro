@@ -111,7 +111,7 @@ export function FilterBar({ query, countries, matchCount, totalCount }: FilterBa
             onChange={(event) => setSearchDraft(event.target.value)}
             placeholder="Search name, entity, domain, country or thesis"
             aria-label="Search targets"
-            className="h-10 w-full rounded-control border border-border-strong bg-surface pl-9 pr-3 text-body text-primary outline-none placeholder:text-tertiary focus:border-secondary"
+            className="h-10 w-full rounded-control border border-border-control bg-surface pl-9 pr-3 text-body text-primary outline-none placeholder:text-tertiary focus:border-secondary"
           />
         </div>
 
@@ -207,7 +207,7 @@ export function FilterBar({ query, countries, matchCount, totalCount }: FilterBa
             value={query.minScore ?? ""}
             onChange={(event) => setParam("minScore", event.target.value || null)}
             aria-label="Minimum score"
-            className="tabular h-8 w-16 rounded-control border border-border-strong bg-surface px-2 text-caption text-primary outline-none focus:border-secondary"
+            className="tabular h-8 w-16 rounded-control border border-border-control bg-surface px-2 text-caption text-primary outline-none focus:border-secondary"
           />
         </label>
       </div>
@@ -272,7 +272,7 @@ function Select<T extends string>({
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
         aria-label={label}
-        className="h-8 rounded-control border border-border-strong bg-surface px-2 text-caption text-primary outline-none focus:border-secondary"
+        className="h-8 rounded-control border border-border-control bg-surface px-2 text-caption text-primary outline-none focus:border-secondary"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

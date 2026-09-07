@@ -274,7 +274,7 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
           onChange={(event) => setInput(event.target.value)}
           placeholder="Ask about a target, a score, or what changed…"
           aria-label="Ask the intelligence panel"
-          className="h-10 min-w-0 flex-1 rounded-control border border-border-strong bg-surface px-3 text-body text-primary outline-none placeholder:text-tertiary focus:border-secondary"
+          className="h-10 min-w-0 flex-1 rounded-control border border-border-control bg-surface px-3 text-body text-primary outline-none placeholder:text-tertiary focus:border-secondary"
         />
         {busy ? (
           <Button variant="secondary" onClick={() => stop()}>

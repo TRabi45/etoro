@@ -25,19 +25,38 @@
   --brand-primary-hover: #10ad31;
   --brand-primary-soft: #e9f8ec;
 
-  /* Text. Three levels only; anything below tertiary is not readable at 13px. */
+  /*
+   * Text. Three levels only; anything below tertiary is not readable at 13px.
+   *
+   * Tertiary is darker than the brand direction's starting value. The suggested
+   * #7b847c measures 3.86:1 on white and 3.59:1 on the canvas, which fails AA -
+   * and tertiary is not decorative here: it carries dates, "Undated", "Not
+   * recorded" and every other honest gap, which are exactly the words a reader
+   * must not miss. #6b736c keeps the hue and clears 4.5:1 on all three surfaces.
+   */
   --text-primary: #111411;
   --text-secondary: #5f685f;
-  --text-tertiary: #7b847c;
+  --text-tertiary: #6b736c;
 
   /* Surfaces. The canvas is the page, surfaces are the cards on it. */
   --canvas: #f5f7f5;
   --surface: #ffffff;
   --surface-subtle: #fafbfa;
 
-  /* Borders do the hierarchy work that shadows do in most dashboards. */
+  /*
+   * Borders do the hierarchy work that shadows do in most dashboards.
+   *
+   * Two weights for separation, plus a third for interactive edges. The
+   * distinction is a WCAG one rather than a stylistic one: a rule between two
+   * table cells is decorative and exempt from contrast rules, but the border of
+   * a text input is what identifies the control, and 1.4.11 requires 3:1 for
+   * that. `--border-strong` at 1.58:1 is fine for the first job and fails the
+   * second, so controls take `--border-control`, which clears 3:1 on every
+   * surface a control sits on.
+   */
   --border: #dfe5df;
   --border-strong: #c7d0c8;
+  --border-control: #809482;
 
   /* Status. Each hue pairs a AA-contrast foreground with a tint for fills. */
   --info: #175cd3;
@@ -77,6 +96,7 @@
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-border-control: var(--border-control);
 
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);

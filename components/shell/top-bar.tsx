@@ -54,7 +54,7 @@ export function TopBar({
         type="button"
         onClick={onOpenNav}
         aria-label="Open navigation"
-        className="rounded-control p-2 text-secondary motion-standard transition-colors hover:bg-surface-subtle hover:text-primary md:hidden"
+        className="rounded-control p-2 text-secondary motion-standard transition-colors hover:bg-surface-subtle hover:text-primary shell:hidden"
       >
         <Icon name="panel-right" size={20} />
       </button>
@@ -97,7 +97,7 @@ export function TopBar({
       </nav>
 
       <div className="ml-auto flex min-w-0 items-center gap-2.5">
-        <div className="hidden min-w-0 flex-1 justify-end sm:flex">
+        <div className="flex min-w-0 flex-1 justify-end">
           <CommandMenu targets={targets} loadProblem={targetsProblem} />
         </div>
 
@@ -114,7 +114,7 @@ export function TopBar({
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-control border motion-standard transition-colors ${
             agentOpen
               ? "border-brand/40 bg-brand-soft text-primary"
-              : "border-border-strong bg-surface text-secondary hover:bg-surface-subtle hover:text-primary"
+              : "border-border-control bg-surface text-secondary hover:bg-surface-subtle hover:text-primary"
           }`}
         >
           <Icon name="agent" size={18} />

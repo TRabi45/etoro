@@ -1,34 +1,52 @@
+import { Skeleton, SkeletonCard, SkeletonRegion } from "@/components/ui/skeleton";
+
 /**
- * Loading state for the dashboard.
+ * The briefing, while it loads.
  *
- * The company list is rendered at request time from the database, so there is a
- * real interval where nothing is available yet. Showing the page frame with
- * placeholder rows keeps the layout stable instead of flashing an empty screen
- * that looks like "no companies found".
+ * Shaped like the real page - brief card, three attention rows, a five-row
+ * table - so nothing moves when the data arrives. A centred spinner would be
+ * less work and would tell the reader nothing about what is coming, and an
+ * empty frame would read as "no findings today", which is a different and much
+ * worse message than "not yet".
  */
-export default function DashboardLoading() {
+export default function BriefingLoading() {
   return (
-    <main className="mx-auto w-full max-w-4xl px-5 py-10">
-      <header className="border-b border-slate-200 pb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          eToro Corporate Development
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">M&amp;A Intelligence Agent</h1>
-      </header>
-      <section className="mt-8" aria-busy="true" aria-live="polite">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Monitored companies
-        </h2>
-        <p className="sr-only">Loading the monitored universe.</p>
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((row) => (
-            <li
-              key={row}
-              className="h-28 animate-pulse rounded-lg border border-slate-200 bg-slate-100"
-            />
-          ))}
-        </ul>
-      </section>
-    </main>
+    <SkeletonRegion label="Loading the morning brief">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-6">
+        <Skeleton width="w-40" height="h-8" />
+        <SkeletonCard lines={2} />
+
+        <div>
+          <Skeleton width="w-36" height="h-5" />
+          <div className="mt-3 overflow-hidden rounded-card border border-border bg-surface">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="border-b border-border px-5 py-4 last:border-b-0">
+                <Skeleton width="w-32" height="h-5" />
+                <Skeleton width="w-3/4" className="mt-2.5" />
+                <Skeleton width="w-1/2" className="mt-2" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Skeleton width="w-40" height="h-5" />
+          <div className="mt-3 overflow-hidden rounded-card border border-border bg-surface">
+            {[0, 1, 2, 3, 4].map((row) => (
+              <div
+                key={row}
+                className="flex items-center gap-4 border-b border-border px-5 py-3.5 last:border-b-0"
+              >
+                <Skeleton width="w-7" height="h-7" className="rounded-control" />
+                <Skeleton width="w-36" />
+                <Skeleton width="w-56" className="hidden lg:block" />
+                <Skeleton width="w-12" />
+                <Skeleton width="w-24" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </SkeletonRegion>
   );
 }
