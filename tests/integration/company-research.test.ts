@@ -370,4 +370,83 @@ describe("researchCompany", () => {
     // Same conflict group on both sides - neither overwrote the other.
     expect(new Set(claims.data?.map((c) => c.conflict_group)).size).toBe(1);
   });
+
+  it("finishes successfully when some sources fail, and keeps every miss visible", async () => {
+    const slug = await createFixtureCompany("Fixture Co Partial Sources");
+    // One path serves a page; every other planned path 404s. One failed
+    // source must cost one source, not the company run.
+    const fetchImpl = fakeFetch({
+      "/": fakePage("Fixture Co", "Fixture Co is a B2B infrastructure company."),
+    });
+
+    const report = await researchCompany({
+      slug,
+      trigger: "manual",
+      fetchImpl,
+      analyzeImpl: async () => ({
+        output: baseAnalystOutput(),
+        problem: null,
+        model: "fixture",
+        promptVersion: "analyst/test",
+      }),
+    });
+
+    expect(["success", "partial_success"]).toContain(report.status);
+    expect(report.sourcesPlanned).toBeGreaterThan(report.sourcesFetched);
+    expect(report.sourcesFetched).toBeGreaterThan(0);
+    expect(report.claimsWritten).toBeGreaterThan(0);
+    // Every miss stays visible rather than being smoothed away.
+    expect(report.warnings.some((warning) => /could not fetch/i.test(warning))).toBe(true);
+
+    const db = client();
+    const run = await db
+      .from("company_research_runs")
+      .select("status, sources_planned, sources_fetched, claims_written, warnings")
+      .eq("id", report.runId)
+      .single();
+
+    // The persisted run agrees with what was reported, rather than the report
+    // being a prettier story told only to the caller.
+    expect(run.data?.sources_fetched).toBe(report.sourcesFetched);
+    expect(run.data?.claims_written).toBe(report.claimsWritten);
+    expect(run.data?.status).toBe(report.status);
+  });
+
+  it("returns the persisted status and counters on a reused run, not a fresh zeroed one", async () => {
+    const slug = await createFixtureCompany("Fixture Co Reused Counters");
+    const fetchImpl = fakeFetch({
+      "/": fakePage("Fixture Co", "Fixture Co is a B2B infrastructure company."),
+    });
+    const analyzeImpl = async () => ({
+      output: baseAnalystOutput(),
+      problem: null,
+      model: "fixture",
+      promptVersion: "analyst/test",
+    });
+    const idempotencyKey = `reuse-counters:${slug}`;
+
+    const first = await researchCompany({
+      slug,
+      trigger: "manual",
+      idempotencyKey,
+      fetchImpl,
+      analyzeImpl,
+    });
+    const reused = await researchCompany({
+      slug,
+      trigger: "manual",
+      idempotencyKey,
+      fetchImpl,
+      analyzeImpl,
+    });
+
+    expect(reused.reused).toBe(true);
+    // The bug this guards: manufacturing a fresh `success` with zero counts,
+    // which tells an operator the run found nothing rather than that it
+    // already ran.
+    expect(reused.status).toBe(first.status);
+    expect(reused.sourcesFetched).toBe(first.sourcesFetched);
+    expect(reused.claimsWritten).toBe(first.claimsWritten);
+    expect(reused.warnings.some((warning) => /already exists/i.test(warning))).toBe(true);
+  });
 });

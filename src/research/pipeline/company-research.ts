@@ -122,7 +122,7 @@ const FAMILY_SOURCE_TYPE: Record<
   news_event: { sourceType: "trade_press", trustTier: "tertiary" },
 };
 
-interface FetchedCandidate {
+export interface FetchedCandidate {
   document: FetchedDocument;
   family: SourceFamily;
 }
@@ -181,8 +181,17 @@ async function fetchPlannedDocuments(
   return { fetched, warnings };
 }
 
-/** Builds an ExtractionPayload from the Analyst's output and the documents it read. */
-function buildExtractionPayload(
+/**
+ * Builds an ExtractionPayload from the Analyst's output and the documents it
+ * read - the conversion from gathered evidence into the validated v0.3 inputs
+ * the deterministic engine consumes.
+ *
+ * Exported for unit testing. This is the seam where a model's judgement
+ * becomes scoring input, so it is where a fabricated citation or a claim tied
+ * to a document that was never fetched has to be caught; that deserves direct
+ * tests rather than only being exercised through a database round trip.
+ */
+export function buildExtractionPayload(
   companySlug: string,
   fetchedDocuments: FetchedCandidate[],
   analysis: AnalystOutput,
