@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ResearchStateBadge, ResearchTierBadge } from "@/components/company/research-status";
 import type { CompanyListItem } from "@/src/db/repositories/companies";
 import type { EnablingLayer, StrategicTheme } from "@/src/config/taxonomy";
 
@@ -10,9 +11,9 @@ import type { EnablingLayer, StrategicTheme } from "@/src/config/taxonomy";
  * mock data - if this list is empty, the database is empty, which is exactly
  * what an evaluator should be able to conclude from looking at it.
  *
- * It renders identity only. There is no score, recommendation or profile in this
- * milestone, and showing a placeholder for one would misrepresent seed data as
- * research the agent had done.
+ * It renders identity plus stored research allocation and execution state. It
+ * never implies a score or profile exists merely because a company has been
+ * discovered.
  */
 
 const THEME_LABELS: Record<StrategicTheme, string> = {
@@ -35,6 +36,30 @@ function Tag({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   );
+}
+
+function ResearchSummary({ company }: { company: CompanyListItem }) {
+  const observed =
+    company.claimCount === 0 && company.eventCount === 0
+      ? "No claims or events are recorded yet."
+      : `${company.claimCount} claim${company.claimCount === 1 ? "" : "s"} and ${company.eventCount} event${company.eventCount === 1 ? "" : "s"} recorded.`;
+
+  switch (company.researchState) {
+    case "pending":
+      return company.recordOrigin === "bootstrap_identity"
+        ? `Bootstrap identity - research has not started. ${observed}`
+        : `Discovered by monitoring - company research is pending. ${observed}`;
+    case "running":
+      return `Company research is currently running. ${observed}`;
+    case "complete":
+      return `Research completed. ${observed}`;
+    case "partial":
+      return `Research completed partially; recorded evidence remains available. ${observed}`;
+    case "blocked":
+      return `Research is blocked. ${company.researchTierReason ?? observed}`;
+    case "failed":
+      return `The last research attempt failed. ${company.researchTierReason ?? observed}`;
+  }
 }
 
 export function CompanyList({ companies }: { companies: CompanyListItem[] }) {
@@ -72,34 +97,24 @@ export function CompanyList({ companies }: { companies: CompanyListItem[] }) {
               .map((layer) => (
                 <Tag key={layer}>{LAYER_LABELS[layer]}</Tag>
               ))}
+            <ResearchTierBadge tier={company.researchTier} />
+            <ResearchStateBadge state={company.researchState} />
           </div>
 
-          {/* Three states, not two.
-              The card used to print "Bootstrap identity - research pending" for
-              anything without an assessment, which mislabelled every company the
-              monitoring pipeline discovered as a hand-seeded identity - and told
-              the reader nothing was known about a company the pipeline had
-              already collected a dozen sourced claims on. Provenance and
-              emptiness are separate facts and the card now says both. */}
-          {company.isResearchPending && company.recordOrigin === "bootstrap_identity" ? (
-            <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium text-amber-700">
-              Bootstrap identity — research pending
-            </p>
-          ) : company.isResearchPending ? (
-            <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium text-slate-600">
-              <span className="font-semibold text-slate-700">Discovered by monitoring</span> —{" "}
-              {company.claimCount === 0 && company.eventCount === 0
-                ? "named in a source, nothing recorded yet"
-                : `${company.claimCount} claim${company.claimCount === 1 ? "" : "s"}, ${company.eventCount} event${company.eventCount === 1 ? "" : "s"}`}
-              . Not scored: a score needs fundamentals, which news does not establish.
-            </p>
-          ) : (
-            <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs font-medium">
-              <Link href={`/companies/${company.slug}`} className="text-blue-700 hover:underline">
-                View evidence-backed profile →
-              </Link>
-            </p>
-          )}
+          <p className="mt-3 border-t border-dashed border-slate-200 pt-2 text-xs text-slate-600">
+            <ResearchSummary company={company} />
+            {company.researchTierReason &&
+            company.researchState !== "blocked" &&
+            company.researchState !== "failed" ? (
+              <span> Tier reason: {company.researchTierReason}</span>
+            ) : null}
+          </p>
+
+          <p className="mt-2 text-xs font-medium">
+            <Link href={`/companies/${company.slug}`} className="text-blue-700 hover:underline">
+              View company profile →
+            </Link>
+          </p>
         </li>
       ))}
     </ul>

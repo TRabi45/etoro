@@ -4,19 +4,23 @@ import { connection } from "next/server";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { AssessmentSection } from "@/components/company/assessment-section";
 import { FundamentalsSection } from "@/components/company/fundamentals-section";
+import { ResearchStateBadge, ResearchTierBadge } from "@/components/company/research-status";
 import { ScoreBreakdown } from "@/components/company/score-breakdown";
 import { SourcesFooter } from "@/components/company/sources-footer";
 import { Notice } from "@/components/ui/notice";
-import { getCompanyProfileWithEvidence } from "@/src/db/repositories/company-profile";
-import type { EnablingLayer, StrategicTheme } from "@/src/config/taxonomy";
+import {
+  getCompanyProfileWithEvidence,
+  type CompanyProfileView,
+} from "@/src/db/repositories/company-profile";
+import type { EnablingLayer, StrategicTheme, TargetPath } from "@/src/config/taxonomy";
 
 /**
  * The company deep-dive profile.
  *
  * Everything on this page comes out of the database through the repository
- * layer: identity, evidence, fundamentals, assessment and the deterministic
- * score. Nothing is hard-coded, and every material statement carries a citation
- * that resolves to the sources footer.
+ * layer: identity, research status, evidence, fundamentals, assessment and the
+ * deterministic score. Nothing is hard-coded, and every material statement
+ * carries a citation that resolves to the sources footer.
  *
  * `connection()` moves rendering to request time, so the page is never a
  * build-time snapshot and `next build` does not need database credentials.
@@ -35,6 +39,79 @@ const LAYER_LABELS: Record<EnablingLayer, string> = {
   community: "Community",
   none: "No enabling layer",
 };
+
+const PATH_LABELS: Record<TargetPath, string> = {
+  platform: "Platform",
+  tuck_in: "Tuck-in",
+  hybrid: "Hybrid",
+};
+
+function DateValue({ value, empty }: { value: string | null; empty: string }) {
+  return value ? <time dateTime={value}>{value.slice(0, 10)}</time> : empty;
+}
+
+function ResearchStatusNotice({ profile }: { profile: CompanyProfileView }) {
+  const { company } = profile;
+  const reason = company.researchTierReason ?? "No detailed reason was recorded for this state.";
+
+  switch (company.researchState) {
+    case "pending":
+      return (
+        <Notice
+          tone="warning"
+          title={
+            company.recordOrigin === "bootstrap_identity"
+              ? "Bootstrap identity - research pending"
+              : "Company research pending"
+          }
+        >
+          <p>
+            {company.recordOrigin === "bootstrap_identity"
+              ? "This is an identity/search lead. No company-specific research has completed yet."
+              : "This company was discovered by the monitoring pipeline. Company-specific research has not completed yet."}
+          </p>
+        </Notice>
+      );
+    case "running":
+      return (
+        <Notice tone="neutral" title="Company research is running">
+          <p>
+            Existing evidence remains visible while the current bounded research pass is in
+            progress.
+          </p>
+        </Notice>
+      );
+    case "partial":
+      return (
+        <Notice tone="warning" title="Company research completed partially">
+          <p>
+            Some sources or fields could not be established. The evidence below is retained; absent
+            material remains unknown. {reason}
+          </p>
+        </Notice>
+      );
+    case "blocked":
+      return (
+        <Notice tone="warning" title="Company research is blocked">
+          <p>{reason}</p>
+        </Notice>
+      );
+    case "failed":
+      return (
+        <Notice tone="error" title="The latest company-research attempt failed">
+          <p>{reason}</p>
+        </Notice>
+      );
+    case "complete":
+      return profile.hasResearch ? null : (
+        <Notice tone="warning" title="Research is marked complete without a rendered profile">
+          <p>
+            No claims, assessment, or active v0.3 score are available to render for this company.
+          </p>
+        </Notice>
+      );
+  }
+}
 
 export default async function CompanyProfilePage({ params }: PageProps<"/companies/[slug]">) {
   await connection();
@@ -113,20 +190,45 @@ export default async function CompanyProfilePage({ params }: PageProps<"/compani
                 {LAYER_LABELS[layer]}
               </span>
             ))}
+          <ResearchTierBadge tier={company.researchTier} />
+          <ResearchStateBadge state={company.researchState} />
           {profile.path ? (
             <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-              {profile.path === "tuck_in"
-                ? "Tuck-in"
-                : profile.path === "platform"
-                  ? "Platform"
-                  : "Hybrid"}
+              Classification: {PATH_LABELS[profile.path]}
             </span>
           ) : null}
         </div>
 
+        <dl className="mt-4 grid gap-x-6 gap-y-1 text-xs text-slate-600 sm:grid-cols-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <dt>Last researched</dt>
+            <dd className="font-medium text-slate-800">
+              <DateValue value={company.lastResearchedAt} empty="Not yet" />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <dt>Next refresh due</dt>
+            <dd className="font-medium text-slate-800">
+              <DateValue value={company.nextRefreshAt} empty="Not scheduled" />
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <dt>Tier confidence</dt>
+            <dd className="font-medium capitalize text-slate-800">
+              {company.researchTierConfidence ?? "Not established"}
+            </dd>
+          </div>
+          {company.researchTierReason ? (
+            <div className="sm:col-span-2">
+              <dt className="inline">Tier reason: </dt>
+              <dd className="inline text-slate-800">{company.researchTierReason}</dd>
+            </div>
+          ) : null}
+        </dl>
+
         {profile.evidence.freshness.lastUpdatedAt ? (
           <p className="mt-3 text-xs text-slate-500">
-            Last updated {profile.evidence.freshness.lastUpdatedAt.slice(0, 10)}
+            Last evidence update {profile.evidence.freshness.lastUpdatedAt.slice(0, 10)}
             {profile.evidence.freshness.staleFields.length > 0
               ? ` · stale: ${profile.evidence.freshness.staleFields.join(", ")}`
               : ""}
@@ -134,16 +236,20 @@ export default async function CompanyProfilePage({ params }: PageProps<"/compani
         ) : null}
       </header>
 
-      {!profile.hasResearch ? (
-        <div className="mt-6">
-          <Notice tone="warning" title="Bootstrap identity — research pending">
+      <div className="mt-6 space-y-4">
+        <ResearchStatusNotice profile={profile} />
+
+        {company.legalEntityName === null ? (
+          <Notice tone="warning" title="Acquirable legal entity unresolved">
             <p>
-              This company is a seeded identity. The research pipeline has not produced any
-              evidence, fundamentals, assessment or score for it yet.
+              Evidence may be collected, but a v0.3 score must not be written until the target legal
+              entity is established.
             </p>
           </Notice>
-        </div>
-      ) : (
+        ) : null}
+      </div>
+
+      {profile.hasResearch ? (
         <>
           {/* The provenance of this data is stated plainly, and it is read from
               the run that actually produced it - never hard-coded - so a real
@@ -165,7 +271,7 @@ export default async function CompanyProfilePage({ params }: PageProps<"/compani
           {profile.score ? <ScoreBreakdown score={profile.score} /> : null}
           <SourcesFooter sources={profile.sources} />
         </>
-      )}
+      ) : null}
 
       {/* The page context lets the agent resolve "their score" or "compare them
           to Dfns" without the user having to name this company again. */}

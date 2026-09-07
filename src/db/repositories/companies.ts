@@ -6,6 +6,8 @@ import type {
   RecordOrigin,
   StrategicTheme,
 } from "@/src/config/taxonomy";
+import type { ResearchState } from "@/src/db/repositories/company-tiers";
+import type { ResearchTier } from "@/src/domain/tiering/tier-policy";
 
 /**
  * Company repository.
@@ -31,16 +33,15 @@ export interface CompanyListItem {
   enablingLayers: EnablingLayer[];
   recordOrigin: RecordOrigin;
   lifecycleStatus: LifecycleStatus;
-  /**
-   * True when this row is still identity with nothing researched behind it.
-   *
-   * Derived from whether the pipeline has actually written an assessment, not
-   * from the row's own lifecycle flag: a bootstrap row keeps `record_origin =
-   * bootstrap_identity` for life, because that is how it was created, so the
-   * flag alone would keep claiming "research pending" long after research
-   * existed.
-   */
-  isResearchPending: boolean;
+  /** Current deterministic allocation level, independent of record origin. */
+  researchTier: ResearchTier;
+  /** The policy explanation persisted with the current tier. */
+  researchTierReason: string | null;
+  researchTierConfidence: "low" | "medium" | "high" | null;
+  /** The latest company-research outcome, not a proxy inferred from an assessment. */
+  researchState: ResearchState;
+  lastResearchedAt: string | null;
+  nextRefreshAt: string | null;
   /**
    * How much the monitoring pipeline has gathered about this company.
    *
@@ -73,9 +74,9 @@ function readCount(value: unknown): number {
 /**
  * Lists companies for the dashboard.
  *
- * Selects identity columns plus a marker for whether an assessment exists, so
- * the list can distinguish a seeded identity from a researched company without
- * loading either profile.
+ * Research state comes from its persisted state column. It is intentionally not
+ * inferred from assessments or scores: a partial or blocked pass can leave
+ * useful evidence without either derived record.
  */
 export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[]>> {
   const connection = createPublicClient();
@@ -86,7 +87,7 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
   const { data, error } = await connection.client
     .from("companies")
     .select(
-      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, updated_at, assessments(id), claims(count), events(count)",
+      "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, lifecycle_status, research_tier, research_tier_reason, research_tier_confidence, research_state, last_researched_at, next_refresh_at, updated_at, claims(count), events(count)",
     )
     // A screened-out row was never a target - a product, an investor, a
     // duplicate. A precedent is a real company that is not available. Neither
@@ -116,7 +117,12 @@ export async function listCompanies(): Promise<RepositoryResult<CompanyListItem[
       enablingLayers: row.enabling_layers ?? [],
       recordOrigin: row.record_origin,
       lifecycleStatus: row.lifecycle_status,
-      isResearchPending: (row.assessments ?? []).length === 0,
+      researchTier: row.research_tier,
+      researchTierReason: row.research_tier_reason,
+      researchTierConfidence: row.research_tier_confidence,
+      researchState: row.research_state,
+      lastResearchedAt: row.last_researched_at,
+      nextRefreshAt: row.next_refresh_at,
       claimCount: readCount(row.claims),
       eventCount: readCount(row.events),
       updatedAt: row.updated_at,

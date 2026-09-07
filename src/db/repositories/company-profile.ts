@@ -11,6 +11,7 @@ import type {
   ClaimKind,
   ConfidenceLevel,
   EnablingLayer,
+  RecordOrigin,
   RecommendationState,
   SourceTrustTier,
   SourceType,
@@ -18,6 +19,8 @@ import type {
   TargetPath,
   ValueStatus,
 } from "@/src/config/taxonomy";
+import type { ResearchState } from "@/src/db/repositories/company-tiers";
+import type { ResearchTier } from "@/src/domain/tiering/tier-policy";
 
 /**
  * The company profile read model.
@@ -144,6 +147,13 @@ export interface RawCompanyRow {
   primary_domain: string | null;
   theme_tags: StrategicTheme[];
   enabling_layers: EnablingLayer[];
+  record_origin: RecordOrigin;
+  research_tier: ResearchTier;
+  research_tier_reason: string | null;
+  research_tier_confidence: ConfidenceLevel | null;
+  research_state: ResearchState;
+  last_researched_at: string | null;
+  next_refresh_at: string | null;
   updated_at: string;
 }
 
@@ -256,6 +266,13 @@ export interface CompanyProfileView {
     primaryDomain: string | null;
     themeTags: StrategicTheme[];
     enablingLayers: EnablingLayer[];
+    recordOrigin: RecordOrigin;
+    researchTier: ResearchTier;
+    researchTierReason: string | null;
+    researchTierConfidence: ConfidenceLevel | null;
+    researchState: ResearchState;
+    lastResearchedAt: string | null;
+    nextRefreshAt: string | null;
   };
   /** The assessed path. It lives on the assessment, not on the identity row. */
   path: TargetPath | null;
@@ -550,6 +567,13 @@ export function mapCompanyProfile(
       primaryDomain: rows.company.primary_domain,
       themeTags: rows.company.theme_tags ?? [],
       enablingLayers: rows.company.enabling_layers ?? [],
+      recordOrigin: rows.company.record_origin,
+      researchTier: rows.company.research_tier,
+      researchTierReason: rows.company.research_tier_reason,
+      researchTierConfidence: rows.company.research_tier_confidence,
+      researchState: rows.company.research_state,
+      lastResearchedAt: rows.company.last_researched_at,
+      nextRefreshAt: rows.company.next_refresh_at,
     },
     path: assessment?.path ?? null,
     metrics,
@@ -597,7 +621,7 @@ export async function getCompanyProfileWithEvidence(
     client
       .from("companies")
       .select(
-        "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, updated_at",
+        "id, canonical_name, slug, legal_entity_name, primary_domain, theme_tags, enabling_layers, record_origin, research_tier, research_tier_reason, research_tier_confidence, research_state, last_researched_at, next_refresh_at, updated_at",
       )
       .eq("slug", slug)
       .maybeSingle(),
