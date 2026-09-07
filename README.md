@@ -6,14 +6,16 @@ builds evidence-backed company profiles, scores them with deterministic and
 versioned logic, and explains its reasoning conversationally with citations,
 unknowns and a counter-thesis.
 
-> **Current state: Build Milestone 4 of 6.** The system now reads the world on
-> its own: a scheduled pipeline fetches fintech press, an Extractor model turns
-> each document into validated claims and events, entity resolution decides
-> conservatively whether a named company is one already tracked, and the
-> dashboard shows what the last run produced and what it missed. The
-> evidence-backed profile and the grounded chat agent from earlier milestones sit
-> on top of it. Still ahead: the full dashboard (Milestone 5) and deployment
-> (Milestone 6). See [Milestone status](#milestone-status).
+> **Current state: Build Milestone 5 of 6.** The production loop is closed. A
+> company that exists only as a name and a domain can now be taken all the way
+> to an evidence-backed, deterministically scored profile without a human in the
+> loop: bounded company-specific source discovery, guarded retrieval, validated
+> claims that preserve contradictions and unknowns, a strategic assessment, the
+> single v0.3 score where the gates permit one, an automatic research tier, and a
+> scheduled next refresh. Monitoring, the evidence-backed profile and the
+> grounded chat agent from earlier milestones sit on top of it. Still ahead: the
+> full Top 25 dashboard and explorer (Milestone 6) and deployment. See
+> [Milestone status](#milestone-status).
 
 ## The business foundation
 
@@ -34,10 +36,10 @@ Two things follow from it that are easy to get wrong:
   has to do and cite.
 
 `tests/unit/thesis-conformance.test.ts` states what the thesis requires as
-executable assertions and checks the implementation against them. The gaps that
-remain open are inverted with `it.fails`, so closing one makes its test fail for
-passing unexpectedly - a specification gap cannot quietly become satisfied
-without someone noticing.
+executable assertions and checks the implementation against them. Every one of
+them now passes as an ordinary assertion: the four strategic pillars were the
+last open gap, and closing them removed the final inverted `it.fails`. A gap
+that reopens fails the suite rather than quietly becoming acceptable.
 
 ## Why the product is shaped this way
 
@@ -63,23 +65,24 @@ A TypeScript modular monolith. One codebase, one relational database, one shared
 research pipeline used by both scheduled and manual runs. No microservices, no
 multi-agent orchestration, no vector database.
 
-| Layer                  | Location                         | Responsibility                                                                          |
-| ---------------------- | -------------------------------- | --------------------------------------------------------------------------------------- |
-| Dashboard              | `app/`, `components/`            | Server-rendered views. Never queries the database directly, never calls a provider SDK. |
-| Repositories           | `src/db/repositories/`           | The only path to persistence. Returns typed results, including typed failures.          |
-| Database clients       | `src/db/client.ts`               | Public read-only client and server-only service client.                                 |
-| Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                          |
-| Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                |
-| Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.              |
-| Pipeline               | `src/research/pipeline/`         | Extraction-payload contract and the orchestration that writes the evidence tree.        |
-| Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.         |
-| Stub payload           | `data/stub/`                     | Synthetic stand-in for live extraction until Milestone 4. Clearly labelled as such.     |
-| AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.            |
-| Server utilities       | `src/server/`                    | Transport concerns that are not repositories - currently endpoint rate limiting.        |
-| Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                               |
-| Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                             |
-| Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                           |
-| Gold benchmark         | `tests/evaluation/gold/`         | Evaluation fixtures. Production modules cannot import these.                            |
+| Layer                  | Location                         | Responsibility                                                                                     |
+| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Dashboard              | `app/`, `components/`            | Server-rendered views. Never queries the database directly, never calls a provider SDK.            |
+| Repositories           | `src/db/repositories/`           | The only path to persistence. Returns typed results, including typed failures.                     |
+| Database clients       | `src/db/client.ts`               | Public read-only client and server-only service client.                                            |
+| Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                                     |
+| Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                           |
+| Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.                         |
+| Pipeline               | `src/research/pipeline/`         | The monitoring loop and `researchCompany`, the one orchestrator every trigger shares.              |
+| Tiering policy         | `src/domain/tiering/`            | Deterministic research-tier and next-refresh decisions over validated facts.                       |
+| Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.                    |
+| Stub payload           | `data/stub/`                     | Synthetic stand-in kept only for `getquin`'s original slice. Labelled as stub wherever it renders. |
+| AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.                       |
+| Server utilities       | `src/server/`                    | Transport concerns that are not repositories - endpoint rate limiting and operator authorization.  |
+| Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                                          |
+| Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                                        |
+| Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                                      |
+| Gold benchmark         | `tests/evaluation/gold/`         | Evaluation fixtures. Production modules cannot import these.                                       |
 
 ### Enforced boundaries
 
@@ -118,13 +121,15 @@ development values, not secrets, but `.env.local` is gitignored regardless - onl
 
 ## Environment variables
 
-| Variable                        | Where it is used   | Notes                                                                                            |
-| ------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`      | Browser and server | Project URL. Local default `http://127.0.0.1:54321`.                                             |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server | Restricted by row-level security to reading the public dashboard tables.                         |
-| `SUPABASE_SERVICE_ROLE_KEY`     | Server only        | Bypasses row-level security. The only credential that may write. Never prefix it `NEXT_PUBLIC_`. |
-| `ANTHROPIC_API_KEY`             | Server only        | From <https://console.anthropic.com>. Required for chat; everything else runs without it.        |
-| `ANTHROPIC_MODEL`               | Server only        | For example `claude-sonnet-5`. Configuration, never a literal in code.                           |
+| Variable                        | Where it is used   | Notes                                                                                                                                                                                                             |
+| ------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Browser and server | Project URL. Local default `http://127.0.0.1:54321`.                                                                                                                                                              |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server | Restricted by row-level security to reading the public dashboard tables.                                                                                                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server only        | Bypasses row-level security. The only credential that may write. Never prefix it `NEXT_PUBLIC_`.                                                                                                                  |
+| `ANTHROPIC_API_KEY`             | Server only        | From <https://console.anthropic.com>. Required for chat; everything else runs without it.                                                                                                                         |
+| `ANTHROPIC_MODEL`               | Server only        | For example `claude-sonnet-5`. Configuration, never a literal in code.                                                                                                                                            |
+| `MA_OPERATOR_SECRET`            | Server only        | Required to call `POST /api/monitor/run`. Sent as the `x-ma-operator-secret` header. Unset means the endpoint refuses every request with 503 rather than running expensive work anonymously.                      |
+| `SEARCH_PROVIDER_API_KEY`       | Server only        | Optional. Configuration for a future search adapter; **no vendor is wired up**, so setting it does not enable search - the source plan says so explicitly in its warnings rather than quietly narrowing coverage. |
 
 The model is an environment variable rather than a constant so that swapping it -
 for cost, latency or capability - never means editing application logic, and so
@@ -147,6 +152,7 @@ that every `agent_runs` row can record which model actually produced an answer.
 | `pnpm db:verify`                    | Integration checks against a live local database (needs Docker)        |
 | `pnpm slice:run`                    | Run the evidence-backed vertical slice for one bootstrap company       |
 | `pnpm monitor`                      | Run one monitoring pass. `--max N`, `--manual`, `--key <value>`        |
+| `pnpm research --slug <slug>`       | Run one company research pass. `--key <value>` bypasses today's key    |
 | `pnpm test:integration`             | Integration tests against a live local database (needs Docker)         |
 | `pnpm agent:ask "<question>"`       | Ask the agent one question from the terminal (needs an API key)        |
 
@@ -304,40 +310,82 @@ Acquire while _any_ hard gate is unresolved, not only a critical one.
 - `POST /api/monitor/run`, `pnpm monitor`, and a daily GitHub Actions schedule
 - Dashboard panels for the last run and the recent-events feed
 
+**Delivered in Milestone 5**
+
+- `researchCompany` (`src/research/pipeline/company-research.ts`) - one shared
+  orchestrator behind every trigger. The CLI, the chat tool, the API route and
+  automated monitoring decide only _when_ to research a company; none of them
+  re-implement _what_ that means.
+- `src/research/sources/company-source-plan.ts` - bounded, company-specific
+  source discovery from the verified domain, stored search leads and URLs
+  already cited by existing evidence. Capped on candidate URLs, fetched
+  documents, attempts, per-source timeout and size, per-host concurrency and an
+  overall run deadline. It reuses the existing guarded fetcher; there is no
+  second fetcher.
+- Research tiers (`indexed` / `monitored` / `deep`) and refresh scheduling as
+  deterministic policy over validated facts, evidence coverage, material events
+  and v0.3 outputs. The model may supply the inputs; it never picks the tier.
+- The Analyst role: one company's fetched documents to validated claims,
+  dimension judgements, all seven gate states and all five route inputs, each
+  material judgement citing the claim IDs that support it.
+- `refresh_company` executes the real pipeline and reports what was fetched,
+  written, left unknown and scored. It no longer returns `not_implemented`.
+- `pnpm research --slug <slug>`, and bounded auto-enrichment of eligible
+  discovered companies after a monitoring pass.
+- `MA_OPERATOR_SECRET` on `POST /api/monitor/run`, compared over hashes so the
+  endpoint is not an oracle for the secret's length.
+- Database-level invariants: RLS on the research ledger, immutable scores, a
+  score constrained to lie inside its own uncertainty interval, one running
+  research run per company, and per-company content-hash de-duplication of
+  sources.
+- Profile and company cards show the persisted research tier and state, when a
+  company was last researched and when it is next due, with a distinct notice
+  for pending, running, partial, blocked and failed.
+
 **Not implemented yet, by design**
 
-- Web search as a discovery source - RSS only, which needs no additional secret
-- Company enrichment after discovery: a discovered company is identity-only and
-  stays `discovered_unreviewed` until a human reviews it
+- Web search as a discovery source - the adapter contract and its configuration
+  exist, but no vendor is wired up, and the source plan says so in its warnings
+  rather than quietly narrowing coverage
+- The full Top 25 dashboard, explorer, filters and saved views
+- Alerts, digests, and Admin/Analyst/Viewer RBAC
 - Market map or watchlist UX
 - Deployment to Vercel or a hosted Supabase project
 
 ## Limitations
 
-- **Two kinds of data now coexist, and they are not equally trustworthy.**
-  Claims and events written by the monitoring pipeline are real: fetched from a
-  real article, extracted by a model, and traceable to a URL. The _profile_ for
-  `getquin` is still the synthetic stub payload from `pnpm slice:run`, with
-  `example.com` sources and a provenance notice on the page. Its evidence
-  structure, citations and score are real; its underlying facts are invented, so
-  the stage-two research is never passed off as agent discovery.
-- **Only `getquin` has a scored profile.** Discovered companies are identity-only
-  and unscored - the pipeline reads news, and news does not establish the
-  fundamentals a score needs.
-- **Extraction quality is bounded by what one article says.** Geography, revenue
-  and licensing are rarely stated in press coverage, so most companies stay
-  without them, which is why the search tool still reports geography as
-  unrecorded.
+- **The universe is small and mostly unresearched.** Six bootstrap identities
+  plus whatever monitoring has discovered. Four of the six have never been
+  researched and say so on their cards; that is the honest state of a system
+  three days old, not a rendering problem.
+- **Coverage is bounded by what a company publishes about itself.** With no
+  search provider configured, a research pass starts from the verified domain
+  and whatever URLs existing evidence already cites. For a company whose site is
+  marketing copy, that yields a real but thin profile - `swan` scores 46.67 at
+  75% coverage off one document, and its own counter-thesis says the evidence is
+  too thin to act on. That is the system working: it reports what it could
+  establish and refuses to dress it up.
+- **`getquin`'s profile is still the synthetic stub payload** from
+  `pnpm slice:run`, with `example.com` sources and a provenance notice on the
+  page. Its evidence structure, citations and score are real; its underlying
+  facts are invented. Real pipeline research is never labelled as stub, and the
+  stub is never shown as live.
 - **A run that reports `partial_success` is the normal case.** Paywalls, blocked
-  crawlers and extraction timeouts are ordinary conditions on the open web. The
-  status means "something was missed and here is what", not "something is
-  broken".
+  crawlers, guessed paths that 404 and extraction timeouts are ordinary
+  conditions on the open web. The status means "something was missed and here is
+  what", not "something is broken".
+- **The analyst schema is validated by Zod, not by a provider grammar.** The
+  full consolidation schema exceeds Anthropic's compiled-grammar limit, so it is
+  sent as an ordinary tool (`structuredOutputMode: "jsonTool"`) and validated on
+  arrival. A malformed response is caught and reported, not silently accepted -
+  but it is caught one step later than a grammar would have caught it.
+- **Auto-enrichment is one company per monitoring pass by default.** Configurable
+  and bounded, and disabled entirely on the two paths that cannot afford it: the
+  chat tool's quick run and `POST /api/monitor/run`, whose `maxDuration` is sized
+  for the monitoring pass alone. Enrichment belongs on the scheduled and CLI
+  paths.
 - The gold benchmark contains expectations for eight companies and is not yet
   executed; the evaluation runner arrives in Milestone 6.
-- `pnpm slice:run` is append-only for claims (an observation is made at a point
-  in time), so re-running it adds a second set. Reset with `pnpm db:reset &&
-pnpm db:seed` for a clean slice. The score itself is keyed on its input hash
-  and will not duplicate.
 - **The chat agent needs an `ANTHROPIC_API_KEY`.** Without one, `/api/chat`
   returns a 503 and the panel says the provider is not configured. The tools,
   envelopes, schemas, session persistence and UI are all covered by tests that
@@ -348,15 +396,13 @@ pnpm db:seed` for a clean slice. The score itself is keyed on its input hash
   rate limiter bounds what any one caller can spend. Both are the right scope for
   an internal demo and neither is an access control. The limiter is also
   in-memory, so it resets on restart and counts per instance.
-- Geography is not recorded for any company and the `events` table stays empty
-  until the monitoring pipeline exists, so discovery questions ("targets in
-  Germany") and change questions ("what changed since yesterday?") correctly
-  return nothing. The agent is built to say so rather than fill the gap from the
-  model's own memory - which is the behaviour being tested there.
+- **Geography is still not recorded for any company**, so discovery questions
+  ("targets in Germany") correctly return nothing. The agent is built to say so
+  rather than fill the gap from the model's own memory.
 
 ## Next milestone boundary
 
-**Milestone 4 - monitoring and discovery.** Source adapters and the shared
-pipeline, deduplication, identity resolution, run logging, daily scheduling and
-bounded manual execution - the step that finally replaces the stub payload with
-real retrieval.
+**Milestone 6 - the intelligence dashboard.** Top 25, the full explorer,
+filters and saved views, evidence freshness, an alerts surface and the analyst
+workflow - built over the real enriched universe this milestone produces, not
+over a list of names.

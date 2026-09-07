@@ -606,6 +606,74 @@ Build Milestone 5 — the complete dashboard: intelligence home, market map, wat
 
 ---
 
+## Milestone 15 — Claude Code Build Milestone 5: Autonomous Company Enrichment and v0.3 Scoring
+
+### AI and tools used
+
+Claude Code on Claude Opus 5. A third model role enters the product: the **Analyst**, which reads everything gathered for one company and produces the dimension judgements, gate states and route inputs the deterministic engine consumes. It is a different job from the Extractor's — the Extractor reads one article and lists facts with no opinion; the Analyst reads a company's whole evidence set and forms one. Both are versioned, and every record names the prompt version and model that produced it.
+
+This milestone was resumed from a session that broke mid-execution. The audit that opened it — running every gate rather than trusting the previous session's summary — is the reason the rest of it went the way it did.
+
+### What the audit found that the previous session's summary did not
+
+The working tree looked finished: 34 modified files, six new ones, 211 unit tests and 37 integration tests passing, lint clean. Four things were not true of it.
+
+The build was broken — four TypeScript errors in a single new test file, because `authorizeOperatorRequest` typed its environment parameter as `NodeJS.ProcessEnv`, which requires `NODE_ENV` and so forces every caller to assemble a whole environment to set one key.
+
+**The migration had never been applied.** `supabase migration list` showed it present locally and absent remotely, which meant all 37 integration tests had passed _without_ the invariants they were supposed to prove: RLS on the research ledger, score immutability, one running run per company, content-hash de-duplication. A green suite proving nothing is worse than a red one.
+
+Nothing had been committed. And the evidence-to-v0.3 conversion — the single seam where a model's judgement becomes a scored input — had no test at all.
+
+### The defect only a live run could find
+
+Exit gate 14 asks for one bounded run against the real web. It failed three times, each time for a different reason, and each failure surfaced identically: `the analyst produced no claims`. A run that looked merely unlucky.
+
+Every automated test injects a fake analyst. The real schema had therefore never been sent to a real provider, and the provider rejected it outright:
+
+1. **27 union-typed parameters against a limit of 16.** A nullable field becomes `["string", "null"]` in JSON Schema; an optional field does not. Both express "unknown".
+2. **27 optional parameters against a limit of 24.** Eight sibling dimension objects each carrying an optional score spent eight parameters on what is structurally one field.
+3. **The compiled grammar was too large** even after both.
+
+The fixes are wire-format concessions, deliberately isolated as transforms so `AnalystOutput` is byte for byte the type it was and no consumer changed: unknowable fields became optional (with a preprocess step that still accepts an explicit `null`, because a model told to omit a field will sometimes send `null` anyway, and losing an entire analysis to that would be absurd); dimensions travel as a list and are rebuilt into the keyed object on arrival, with an omitted dimension filled in as `unknown` rather than zero; and `structuredOutputMode: "jsonTool"` sends the same schema as an ordinary tool rather than a grammar-constrained one, with Zod still validating at the boundary.
+
+The regression test does not test the analyst. It builds the JSON Schema the provider will actually receive and counts its union-typed parameters — the only form of this failure a test can catch before a bill is paid.
+
+Then the live model produced a claim asserting `legal entity registration` as **disclosed** while supplying no value, which the database correctly refuses, and which aborted the entire pass and discarded twelve good claims with it. Such a claim is now recorded as `unknown` with the reason: the predicate is a real observation, and an explicit unknown is precisely how this system is supposed to record "the subject came up, the value did not".
+
+### What the dashboard check found that the tests did not
+
+Opening the profile in a browser — exit gate 15 — showed the "open questions and data gaps" list printing `not established by any fetched document` over and over. Every unknown claim shared one generic reason, so a dozen distinct gaps collapsed into one line that told an analyst nothing about the company. The reason now names the predicate. Fixed where the data is written rather than where it is displayed, because the display was correct and the stored text was weak.
+
+The same check exposed something worse. Four bootstrap companies were marked `partial` with research runs that had fetched nothing. The integration suite was running real research passes against the seeded universe: auto-enrichment selects from the whole universe by design, every seeded identity has a null `next_refresh_at` meaning due now, and so a test asserting "one of _my_ companies was enriched" was really asserting "the runner happened to pick mine". It often did not — the suite was order-dependent, and it left durable wrong state behind. Tests now park every other company's refresh time for their duration and restore it afterwards.
+
+A related assumption died quietly: one test named a bootstrap slug and assumed it would stay unresearched. That assumption cannot survive a milestone whose entire point is that the agent may research any company without approval. The test owns its own identity-only company now.
+
+### Human judgment
+
+Tom made the call on source de-duplication. The migration as drafted put a whole-table unique index on `content_hash`. Because the hash is taken over extracted page text, two unrelated companies publishing identical boilerplate — a shared cookie policy, a parent's press release carried on both sites — would have collapsed into one row, and the second company's evidence would have attached silently to the first company's source: exactly the cross-company attribution failure the security review exists to catch. He asked for the index narrowed per company.
+
+`sources` has no owning company by design, since one article can back claims about several companies. So the narrowing became a `research_company_id` recording something honest and smaller — the company a document was fetched _for_ during a company-specific pass — with feed articles left null and shared, as before.
+
+He also asked for both live checks to be run rather than deferred, which is the only reason the three provider limits and the malformed-claim abort were found at all.
+
+### Verification
+
+`format:check`, `lint`, `typecheck`, 228 unit tests (up from 211), 46 integration tests (up from 37) and the production build all pass. A fresh `supabase db reset` applies all thirteen migrations, generated types match the migrated schema, and all six new invariants were confirmed present in the database by direct query rather than inferred from a passing test.
+
+The exit gate was demonstrated, not asserted. A live bounded run against `swan.io` — a non-gold company — fetched one document through eight real 404s, wrote 13 claims (7 unknown, 6 disclosed), and produced a deterministic v0.3 score of 46.67 at 75% coverage with `do_not_advance`, no stub run anywhere in its provenance. Re-running it detected the unchanged content hash and wrote nothing, which is idempotency proven on live data rather than on a fixture. The dashboard was opened against the local database and shows pending, partial, complete, unresolved-identity and empty-run states, each traced to real rows.
+
+The profile's own counter-thesis says the evidence is too thin to act on. That is the system working: one marketing homepage is what the open web offered for this company without a search provider, and it reported exactly that rather than dressing it up.
+
+### Remaining limitations
+
+Coverage is bounded by what a company publishes about itself while no search provider is configured. `getquin`'s profile is still the synthetic stub payload, clearly labelled. The analyst schema is validated by Zod on arrival rather than by a provider grammar, so a malformed response is caught one step later than it would otherwise be. The gold benchmark is still not executed.
+
+### Next bounded milestone
+
+Build Milestone 6 — the intelligence dashboard: Top 25, the full explorer, filters, evidence freshness, an alerts surface and the analyst workflow, built over the real enriched universe this milestone produces.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
