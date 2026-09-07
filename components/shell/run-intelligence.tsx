@@ -4,6 +4,11 @@ import { useCallback, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import {
+  classifyFailure,
+  unreachableFailure,
+  type ActionRefusal,
+} from "@/components/shell/bounded-action";
 
 /**
  * The `Run intelligence` control.
@@ -20,13 +25,13 @@ import { Icon } from "@/components/ui/icon";
  * sources produced real data *and* left the universe less current than it
  * looks; both halves of that are reported.
  *
- * The two refusals that are not failures are handled as their own states:
- *
- *   - 401/403 - the operator secret is not configured on this deployment. The
- *     action is unavailable, which is a permission fact, not an error the
- *     reader can retry their way out of.
- *   - 429 - a run happened recently. Retrying is pointless until the window
- *     passes, so the retry affordance is withheld and the wait is stated.
+ * Refusals are classified by `classifyFailure`, which decides the one thing
+ * that matters here: whether a retry is honest. It keys off the error code
+ * rather than the status, because a missing operator secret and a missing model
+ * key both return 503 - and both are server configuration facts that no number
+ * of retries will change. Offering a "Try again" button for those would invite
+ * the reader to keep clicking at something guaranteed to fail, and disguise a
+ * configuration problem as a transient one.
  */
 
 interface RunReport {
@@ -47,7 +52,7 @@ type Phase =
   | { kind: "confirming" }
   | { kind: "running" }
   | { kind: "done"; report: RunReport }
-  | { kind: "refused"; title: string; message: string; retryable: boolean };
+  | ({ kind: "refused" } & ActionRefusal);
 
 /** Bounded by the API itself; stated up front so the scope is never a surprise. */
 const MAX_SOURCES = 5;
@@ -73,44 +78,17 @@ export function RunIntelligence() {
         body: JSON.stringify({ maxSources: MAX_SOURCES, idempotencyKey: idempotencyKey.current }),
       });
 
-      if (response.status === 401 || response.status === 403) {
-        setPhase({
-          kind: "refused",
-          title: "Runs are disabled on this deployment",
-          message:
-            "Triggering intelligence requires an internal operator credential that is not configured here. Scheduled runs are unaffected.",
-          retryable: false,
-        });
-        return;
-      }
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("retry-after");
-        setPhase({
-          kind: "refused",
-          title: "A run started recently",
-          message: retryAfter
-            ? `Runs are rate limited to protect the source budget. Try again in about ${Math.ceil(
-                Number(retryAfter) / 60,
-              )} minutes.`
-            : "Runs are rate limited to protect the source budget. Try again shortly.",
-          retryable: false,
-        });
-        return;
-      }
-
       if (!response.ok) {
+        // Every refusal is classified in one place, because the reason a
+        // bounded action was refused decides whether a retry is honest - and
+        // that cannot be read off the status alone. An unconfigured operator
+        // secret returns 503, which would otherwise look like a transient
+        // server fault and be offered a retry that can never succeed.
         const body = (await response.json().catch(() => null)) as {
-          error?: { message?: string };
+          error?: { code?: string; message?: string };
         } | null;
-        setPhase({
-          kind: "refused",
-          title: "The run could not start",
-          message:
-            body?.error?.message ??
-            "The server rejected the request. Nothing was fetched and no data changed.",
-          retryable: true,
-        });
+        const refusal = classifyFailure(response, body, "run");
+        setPhase({ kind: "refused", ...refusal });
         return;
       }
 
@@ -119,13 +97,7 @@ export function RunIntelligence() {
       // New claims and events only appear once the server components re-read.
       router.refresh();
     } catch {
-      setPhase({
-        kind: "refused",
-        title: "The run could not be reached",
-        message:
-          "The request never completed, so it is unknown whether any sources were fetched. Check Monitoring before starting another run.",
-        retryable: true,
-      });
+      setPhase({ kind: "refused", ...unreachableFailure("run") });
     }
   }, [router]);
 

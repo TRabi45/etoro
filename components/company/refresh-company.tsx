@@ -4,6 +4,11 @@ import { useCallback, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import {
+  classifyFailure,
+  unreachableFailure,
+  type ActionRefusal,
+} from "@/components/shell/bounded-action";
 
 /**
  * The profile's bounded refresh.
@@ -38,7 +43,7 @@ type Phase =
   | { kind: "confirming" }
   | { kind: "running" }
   | { kind: "done"; report: RefreshReport }
-  | { kind: "refused"; title: string; message: string; retryable: boolean };
+  | ({ kind: "refused" } & ActionRefusal);
 
 export function RefreshCompany({ slug, name }: { slug: string; name: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -52,44 +57,14 @@ export function RefreshCompany({ slug, name }: { slug: string; name: string }) {
     try {
       const response = await fetch(`/api/companies/${slug}/refresh`, { method: "POST" });
 
-      if (response.status === 401 || response.status === 403) {
-        setPhase({
-          kind: "refused",
-          title: "Refresh is disabled on this deployment",
-          message:
-            "Running research requires an internal operator credential that is not configured here. Scheduled refreshes are unaffected.",
-          retryable: false,
-        });
-        return;
-      }
-
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("retry-after");
-        setPhase({
-          kind: "refused",
-          title: "A research pass ran recently",
-          message: retryAfter
-            ? `Refreshes are rate limited to protect the source budget. Try again in about ${Math.ceil(
-                Number(retryAfter) / 60,
-              )} minutes.`
-            : "Refreshes are rate limited to protect the source budget. Try again shortly.",
-          retryable: false,
-        });
-        return;
-      }
-
       if (!response.ok) {
+        // Shared with the global run control: the reason a bounded action was
+        // refused decides whether a retry is honest, and an unconfigured
+        // operator secret returns 503 rather than a 4xx.
         const body = (await response.json().catch(() => null)) as {
-          error?: { message?: string };
+          error?: { code?: string; message?: string };
         } | null;
-        setPhase({
-          kind: "refused",
-          title: "The refresh could not start",
-          message:
-            body?.error?.message ??
-            "The server rejected the request. Nothing was fetched and no evidence changed.",
-          retryable: true,
-        });
+        setPhase({ kind: "refused", ...classifyFailure(response, body, "refresh") });
         return;
       }
 
@@ -97,13 +72,7 @@ export function RefreshCompany({ slug, name }: { slug: string; name: string }) {
       setPhase({ kind: "done", report });
       router.refresh();
     } catch {
-      setPhase({
-        kind: "refused",
-        title: "The refresh could not be reached",
-        message:
-          "The request never completed, so it is unknown whether any sources were fetched. Check Monitoring before starting another pass.",
-        retryable: true,
-      });
+      setPhase({ kind: "refused", ...unreachableFailure("refresh") });
     }
   }, [slug, router]);
 
