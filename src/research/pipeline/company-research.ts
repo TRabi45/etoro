@@ -246,10 +246,15 @@ export function buildExtractionPayload(
         asOfDate: claim.asOfDate,
         claimKind: claim.claimKind,
         conflictGroup: claim.conflictGroup,
+        // Named by what is missing about *this company*, not by what the
+        // pipeline did. These strings surface directly in the profile's "open
+        // questions and data gaps" list, where a bare "not established by any
+        // fetched document" tells an analyst nothing - and, being identical
+        // across every unknown claim, collapses them all into one line.
         unknownReason: inconsistent
-          ? `The analyst reported this as "${claim.valueStatus}" but supplied no value, so it is recorded as unknown.`
+          ? `${claim.predicate} was reported as "${claim.valueStatus}" with no value, so it is recorded as unknown.`
           : claim.valueStatus === "unknown"
-            ? "Not established by any fetched document."
+            ? `${claim.predicate} is not established by any fetched document.`
             : null,
         sources: [
           {

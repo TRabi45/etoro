@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   executeCompareCompanies,
   executeExplainScore,
@@ -37,6 +37,16 @@ import {
  * any company without approval, so no seeded company can be assumed to stay
  * unresearched between runs.
  */
+const createdCompanyIds: string[] = [];
+
+afterAll(async () => {
+  const connection = createServiceClient();
+  if (!connection.ok) return;
+  for (const id of createdCompanyIds.splice(0)) {
+    await connection.client.from("companies").delete().eq("id", id);
+  }
+});
+
 async function createIdentityOnlyCompany(): Promise<string> {
   const connection = createServiceClient();
   if (!connection.ok) throw new Error(connection.problem.message);
@@ -50,14 +60,19 @@ async function createIdentityOnlyCompany(): Promise<string> {
     .single();
   if (run.error || !run.data) throw new Error(run.error?.message ?? "no agent run");
 
-  const { error } = await client.from("companies").insert({
-    slug,
-    canonical_name: `Identity Only Fixture ${slug}`,
-    record_origin: "agent_generated",
-    entity_role: "operating_company",
-    agent_run_id: run.data.id,
-  });
-  if (error) throw new Error(error.message);
+  const created = await client
+    .from("companies")
+    .insert({
+      slug,
+      canonical_name: `Identity Only Fixture ${slug}`,
+      record_origin: "agent_generated",
+      entity_role: "operating_company",
+      agent_run_id: run.data.id,
+    })
+    .select("id")
+    .single();
+  if (created.error || !created.data) throw new Error(created.error?.message ?? "no company");
+  createdCompanyIds.push(created.data.id);
 
   return slug;
 }

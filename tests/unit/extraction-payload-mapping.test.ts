@@ -272,7 +272,7 @@ describe("evidence to validated v0.3 inputs", () => {
 
     expect(payload.claims).toHaveLength(1);
     expect(payload.claims[0].valueStatus).toBe("unknown");
-    expect(payload.claims[0].unknownReason).toMatch(/supplied no value/i);
+    expect(payload.claims[0].unknownReason).toMatch(/legal entity registration.*no value/i);
     // Unknown, not zero, and not an invented empty string.
     expect(payload.claims[0].valueNumeric).toBeNull();
     expect(payload.claims[0].valueText).toBeNull();

@@ -33,6 +33,44 @@ afterEach(async () => {
   }
 });
 
+/**
+ * Runs `body` with only `eligibleIds` due for refresh.
+ *
+ * Auto-enrichment deliberately selects from the whole universe, so without
+ * this a test asserting "exactly one of *my* companies was enriched" is really
+ * asserting "the runner happened to pick mine" - it picks whichever companies
+ * are due, and every seeded identity has a null `next_refresh_at`, which means
+ * due now. That made this suite order-dependent and, worse, let it run real
+ * research passes against the seeded universe with a fake fetcher, leaving
+ * bootstrap companies marked `partial` in a shared database.
+ *
+ * Everything else is parked in the future for the duration and restored
+ * afterwards, including on failure.
+ */
+async function withOnlyTheseCompaniesDue<T>(
+  eligibleIds: string[],
+  body: () => Promise<T>,
+): Promise<T> {
+  const db = client();
+  const others = await db.from("companies").select("id, next_refresh_at");
+  if (others.error) throw new Error(others.error.message);
+
+  const parked = (others.data ?? []).filter((row) => !eligibleIds.includes(row.id));
+  const parkUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  for (const row of parked) {
+    await db.from("companies").update({ next_refresh_at: parkUntil }).eq("id", row.id);
+  }
+
+  try {
+    return await body();
+  } finally {
+    for (const row of parked) {
+      await db.from("companies").update({ next_refresh_at: row.next_refresh_at }).eq("id", row.id);
+    }
+  }
+}
+
 describe("entity resolution", () => {
   it("keeps Bit2C and B2C2 apart", async () => {
     const db = client();
@@ -213,14 +251,16 @@ describe("auto-enrichment", () => {
       throw new Error("network disabled in test");
     };
 
-    const report = await runMonitoringPass({
-      trigger: "manual",
-      maxSources: 1,
-      idempotencyKey: `test-auto-enrich-${crypto.randomUUID()}`,
-      feeds: [{ name: "Test feed", url: "https://example.com/feed.xml" }],
-      fetchImpl: failingFetch,
-      autoEnrichLimit: 1,
-    });
+    const report = await withOnlyTheseCompaniesDue(createdCompanyIds, () =>
+      runMonitoringPass({
+        trigger: "manual",
+        maxSources: 1,
+        idempotencyKey: `test-auto-enrich-${crypto.randomUUID()}`,
+        feeds: [{ name: "Test feed", url: "https://example.com/feed.xml" }],
+        fetchImpl: failingFetch,
+        autoEnrichLimit: 1,
+      }),
+    );
     createdRunIds.push(report.runId);
 
     // Three companies were eligible; the configured limit of one is what
@@ -248,9 +288,15 @@ describe("auto-enrichment", () => {
       autoEnrichLimit: 1,
     };
 
-    const first = await runMonitoringPass(options);
+    // No fixtures of its own, so nothing is eligible: this test is about the
+    // reused run, and enriching an unrelated seeded company to prove it would
+    // be a side effect, not a fixture.
+    const { first, second } = await withOnlyTheseCompaniesDue([], async () => {
+      const firstRun = await runMonitoringPass(options);
+      const secondRun = await runMonitoringPass(options);
+      return { first: firstRun, second: secondRun };
+    });
     createdRunIds.push(first.runId);
-    const second = await runMonitoringPass(options);
 
     expect(second.reused).toBe(true);
     expect(second.enrichedCompanies).toEqual([]);
