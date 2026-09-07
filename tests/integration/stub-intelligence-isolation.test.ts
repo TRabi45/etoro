@@ -7,7 +7,7 @@ import { getCompanyProfileWithEvidence } from "@/src/db/repositories/company-pro
 import { getCompanyResearchContext } from "@/src/db/repositories/company-research-context";
 import { getActiveScoringModelId } from "@/src/db/repositories/scoring-models";
 import { upsertSource } from "@/src/db/repositories/sources";
-import { searchTargets } from "@/src/db/repositories/targets";
+import { searchTargets, type TargetSummary } from "@/src/db/repositories/targets";
 import type { Database } from "@/src/db/types.generated";
 
 /**
@@ -229,14 +229,46 @@ describe("stub intelligence isolation", () => {
     ]);
 
     expect(ranking.ok).toBe(true);
-    expect(
-      (
-        ranking.data as { matches: { slug: string; normalizedScore: number | null }[] }
-      ).matches.find((target) => target.slug === stubSlug)?.normalizedScore,
-    ).toBeNull();
+    const matches = (ranking.data as { matches: TargetSummary[] }).matches;
+
+    // The identity still appears in the ranking - isolation hides intelligence,
+    // not companies - but every field derived from the synthetic score or its
+    // assessment has to be absent. Naming each field asserts that directly.
+    //
+    // This replaced `expect(JSON.stringify(explanation)).not.toContain("99")`.
+    // That check was searching a whole serialised envelope for the digits of the
+    // stub score, and the envelope also carries an ISO `asOf` timestamp and a
+    // fixture slug built from `Date.now()` - either of which can contain "99"
+    // with nothing having leaked, so it failed at random.
+    const stub = matches.find((target) => target.slug === stubSlug);
+    expect(stub, "the stub identity should still be listed").toBeDefined();
+    expect(stub).toMatchObject({
+      normalizedScore: null,
+      coverage: null,
+      lowerBound: null,
+      upperBound: null,
+      recommendation: null,
+      path: null,
+      thesis: null,
+      whyNow: null,
+      hasResearch: false,
+    });
+
+    // The same tool call still carries the real company's intelligence, so the
+    // assertions above cannot pass merely because the reader returned nulls for
+    // everyone.
+    const real = matches.find((target) => target.slug === realSlug);
+    expect(real).toMatchObject({
+      normalizedScore: 87,
+      recommendation: "acquire",
+      hasResearch: true,
+    });
+
+    // explain_score declines rather than explaining a synthetic score: no
+    // intelligence payload to leak, and no stub source cited alongside it.
     expect(explanation.ok).toBe(true);
     expect(explanation.data).toBeNull();
-    expect(JSON.stringify(explanation)).not.toContain("99");
+    expect(explanation.citations).toEqual([]);
   });
 
   it("F: preserves deliberate service-role access to synthetic fixtures", async () => {
