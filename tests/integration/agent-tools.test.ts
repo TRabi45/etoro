@@ -106,7 +106,7 @@ describe("company tools", () => {
     }
   });
 
-  it("reports an unresearched company as identity-only instead of inventing one", async () => {
+  it("reports an unresearched company without internal implementation language", async () => {
     // This test used to point at a bootstrap slug and assume it would stay
     // unresearched. That assumption died with Milestone 5: the agent is now
     // allowed to research any company without human approval, so a single
@@ -118,7 +118,8 @@ describe("company tools", () => {
 
     expect(result.ok).toBe(true);
     expect(result.confidence).toBe("low");
-    expect(result.warnings.join(" ")).toMatch(/bootstrap identity only/i);
+    expect(result.warnings.join(" ")).toMatch(/has not been researched/i);
+    expect(result.warnings.join(" ")).not.toMatch(/bootstrap identity|say so explicitly/i);
   });
 
   it("says a company is absent rather than describing it from memory", async () => {
@@ -131,7 +132,7 @@ describe("company tools", () => {
 
     expect(result.ok).toBe(true);
     expect(result.data).toBeNull();
-    expect(result.warnings.join(" ")).toMatch(/not in the monitored universe|does not exist/i);
+    expect(result.warnings.join(" ")).toMatch(/no monitored company was found/i);
   });
 
   it("returns fundamentals with unknown measures intact", async () => {

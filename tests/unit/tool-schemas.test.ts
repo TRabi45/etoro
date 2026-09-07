@@ -38,7 +38,10 @@ describe("tool input schemas", () => {
 
   it("gives every tool a human-readable activity label for the UI", () => {
     for (const name of AGENT_TOOL_NAMES) {
-      expect(TOOL_ACTIVITY_LABELS[name]).toBeTruthy();
+      expect(TOOL_ACTIVITY_LABELS[name].running).toBeTruthy();
+      expect(TOOL_ACTIVITY_LABELS[name].complete).toBeTruthy();
+      expect(TOOL_ACTIVITY_LABELS[name].running).not.toContain(name);
+      expect(TOOL_ACTIVITY_LABELS[name].complete).not.toContain(name);
     }
   });
 

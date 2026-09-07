@@ -14,14 +14,27 @@ import { TOOL_ACTIVITY_LABELS, type AgentToolName } from "@/src/ai/tools/labels"
 export interface ToolActivity {
   toolName: string;
   state: "input-streaming" | "input-available" | "output-available" | "output-error";
-  /** Warnings the tool returned, surfaced so caveats are not buried in prose. */
-  warnings?: string[];
   ok?: boolean;
-  errorMessage?: string;
 }
 
-function labelFor(toolName: string): string {
-  return TOOL_ACTIVITY_LABELS[toolName as AgentToolName] ?? toolName.replace(/_/g, " ");
+function isKnownToolName(toolName: string): toolName is AgentToolName {
+  return Object.prototype.hasOwnProperty.call(TOOL_ACTIVITY_LABELS, toolName);
+}
+
+export function toolActivityLabel(activity: ToolActivity): string {
+  const running = activity.state === "input-streaming" || activity.state === "input-available";
+  const failed = activity.state === "output-error" || activity.ok === false;
+
+  if (failed) {
+    return "Check failed";
+  }
+
+  if (!isKnownToolName(activity.toolName)) {
+    return running ? "Checking information" : "Checked information";
+  }
+
+  const labels = TOOL_ACTIVITY_LABELS[activity.toolName];
+  return running ? labels.running : labels.complete;
 }
 
 export function ToolActivityRow({ activity }: { activity: ToolActivity }) {
@@ -48,27 +61,10 @@ export function ToolActivityRow({ activity }: { activity: ToolActivity }) {
           <span aria-hidden="true">{failed ? "✕" : "✓"}</span>
         )}
         <span className="font-medium">
-          {labelFor(activity.toolName)}
+          {toolActivityLabel(activity)}
           {running ? "…" : ""}
         </span>
       </div>
-
-      {failed && activity.errorMessage ? (
-        <p className="mt-1 leading-relaxed">{activity.errorMessage}</p>
-      ) : null}
-
-      {/* Warnings carry the caveats an analyst most needs - empty results,
-          contradictions, stale data - so they are shown rather than left for
-          the model to mention or forget. */}
-      {!failed && activity.warnings && activity.warnings.length > 0 ? (
-        <ul className="mt-1 space-y-0.5">
-          {activity.warnings.map((warning) => (
-            <li key={warning} className="leading-relaxed text-emerald-800">
-              • {warning}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>
   );
 }

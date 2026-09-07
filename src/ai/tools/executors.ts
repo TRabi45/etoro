@@ -78,7 +78,7 @@ function warningsFromProfile(profile: CompanyProfileView): string[] {
     warnings.push(`Stale fields: ${profile.evidence.freshness.staleFields.join(", ")}.`);
   }
   if (profile.evidence.unknowns.length > 0) {
-    warnings.push(`${profile.evidence.unknowns.length} recorded unknown(s); do not fill these in.`);
+    warnings.push(`${profile.evidence.unknowns.length} item(s) remain unknown.`);
   }
   return warnings;
 }
@@ -113,7 +113,7 @@ export async function executeSearchTargets(
       .join(", ");
 
     return toolEmpty(
-      `No companies in the database match ${filters || "these filters"}. Note that headquarters geography is not yet recorded for any company, so any geography filter will return nothing until the monitoring pipeline populates it. Tell the user this rather than naming companies from memory.`,
+      `No monitored companies match ${filters || "these filters"}. Headquarters geography is not yet recorded for any company, so any geography filter currently returns no matches.`,
     );
   }
 
@@ -134,9 +134,7 @@ export async function executeGetCompanyProfile(
     return toolFailure(repositoryProblemToError(result.problem));
   }
   if (!result.data) {
-    return toolEmpty(
-      `No company with slug "${input.slug}" exists in the database. Do not describe this company from prior knowledge; say it is not in the monitored universe.`,
-    );
+    return toolEmpty(`No monitored company was found for "${input.slug}".`);
   }
 
   const profile = result.data;
@@ -150,7 +148,7 @@ export async function executeGetCompanyProfile(
       {
         confidence: "low",
         warnings: [
-          `"${profile.company.canonicalName}" is a bootstrap identity only: no claims, fundamentals, assessment or score have been produced for it. Say so explicitly.`,
+          `"${profile.company.canonicalName}" has not been researched, so no evidence-backed profile or assessment is available.`,
         ],
       },
     );
@@ -199,7 +197,7 @@ export async function executeGetCompanyFundamentals(
 
   if (periodFiltered.length === 0 && !profile.fundamentals) {
     return toolEmpty(
-      `No fundamentals or metric observations are recorded for "${input.slug}". State that the financial picture is unknown rather than estimating it.`,
+      `No financial or commercial evidence is recorded for "${input.slug}"; its financial picture is unknown.`,
     );
   }
 
@@ -320,7 +318,7 @@ export async function executeGetRecentEvents(
   }
   if (result.data.length === 0) {
     return toolEmpty(
-      `No events are recorded on or after ${input.since_date}. This means nothing has been recorded by the monitoring pipeline in that window, not that nothing happened in the world. Do not describe events from prior knowledge.`,
+      `No events are recorded on or after ${input.since_date}. This means the system recorded nothing in that window, not that nothing happened in the world.`,
     );
   }
 
@@ -372,9 +370,7 @@ export async function executeExplainScore(input: ExplainScoreInput): Promise<Too
 
   const profile = result.data;
   if (!profile.score) {
-    return toolEmpty(
-      `No score has been calculated for "${profile.company.canonicalName}". Say that it has not been scored; do not estimate a score.`,
-    );
+    return toolEmpty(`No score has been calculated for "${profile.company.canonicalName}".`);
   }
   if (input.model_version && profile.score.modelVersion !== input.model_version) {
     return toolEmpty(
@@ -483,7 +479,7 @@ export async function executeRefreshCompany(
   const warnings = [...report.warnings];
   if (report.sourcesFetched === 0) {
     warnings.push(
-      "No document could be fetched for this company. Tell the user nothing new was gathered rather than implying a refresh happened.",
+      "No document could be fetched for this company, so no new evidence was gathered.",
     );
   }
 

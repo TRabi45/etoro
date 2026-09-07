@@ -44,7 +44,6 @@ interface ToolPart {
   type: string;
   state?: string;
   output?: unknown;
-  errorText?: string;
 }
 
 export interface AgentPanelProps {
@@ -78,14 +77,12 @@ function readableError(error: Error): string {
 
 function readEnvelope(output: unknown): {
   ok?: boolean;
-  warnings?: string[];
   citations?: Citation[];
-  error?: { message?: string };
 } | null {
   if (output === null || typeof output !== "object") {
     return null;
   }
-  return output as { ok?: boolean; warnings?: string[]; citations?: Citation[] };
+  return output as { ok?: boolean; citations?: Citation[] };
 }
 
 export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) {
@@ -191,9 +188,7 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
               toolActivities.push({
                 toolName: part.type.replace(/^tool-/, ""),
                 state: (part.state ?? "input-available") as ToolActivity["state"],
-                warnings: envelope?.warnings,
                 ok: envelope?.ok,
-                errorMessage: part.errorText ?? envelope?.error?.message,
               });
             }
 

@@ -718,6 +718,32 @@ The agent panel's conversational path was not exercised end to end, because that
 
 ---
 
+## Milestone 17 — Conversational Agent v7: Colleague-Like Responses
+
+### Why the prompt needed another revision
+
+The grounded chat agent was analytically sound but its required `Answer` / `Why it matters` / `Evidence` / `Next step` template made routine exchanges read like miniature research memos. That was a communication problem rather than a research or reasoning problem: a Corporate Development analyst should be able to ask a direct question and receive a direct answer without losing the evidence underneath it.
+
+A manual smoke test of the first unpushed v7 iteration asked, "What do you think about Alpaca?" The epistemic behavior was correct: the agent looked up Alpaca, found that it had not been researched, and declined to invent an assessment. The UX was not. The answer used internal data-model language and exposed the `refresh_company` tool name, while the activity card rendered a tool warning verbatim: `"Alpaca" is a bootstrap identity only ... Say so explicitly.` Tracing the stream showed that this was not model reasoning. `executeGetCompanyProfile` placed operational guidance in the envelope's `warnings` array, `AgentPanel` copied that array into `ToolActivity`, and `ToolActivityRow` rendered every warning as user-facing text.
+
+### Intended behavior change
+
+`conversational-agent/v6` became `conversational-agent/v7`. The prompt now asks for the shortest useful answer, generally one to four sentences for a normal question, with the conclusion first and no headings unless they improve clarity. Response depth scales with intent: a simple ranking question gets the decisive evidence-backed reasons and any material caveat, while a request for a complete acquisition case still receives a detailed structure. Risks, unknowns, counter-thesis and next steps are surfaced when they affect the conclusion, omission would mislead, the user is making a decision, or deeper analysis was requested; they are no longer appended mechanically to every reply.
+
+The smoke-test refinement makes the same distinction between internal execution and conversation. The prompt now prohibits exposing tool/function identifiers and raw tool text, translates unresearched/data-layer states into plain business language, and normally offers at most one natural next action. Tool warnings remain available to the model for grounding but are no longer rendered as activity detail. The activity card shows only controlled running/completed labels such as `Checking company profile` / `Checked company profile`; failures and unknown tool types fall back to generic text rather than exposing an executor name. The unresearched-company warning itself is now factual rather than imperative.
+
+The revision deliberately preserved tool-only factual grounding, per-claim citations, provenance labels, explicit unknown and conflicting-data handling, untrusted-source prompt-injection boundaries, deterministic score ownership, gate and recommendation semantics, bounded tool use, and validated page, filter and comparison context. No research pipeline, score, schema, permission or tool-safety behavior changed; the UI change is limited to presenting safe activity labels instead of raw envelope content.
+
+### Files and verification
+
+Changed `src/ai/prompts/v1/conversational-agent.ts`, `src/ai/tools/executors.ts`, `src/ai/tools/labels.ts`, `components/agent/agent-panel.tsx`, `components/chat/tool-activity.tsx`, `tests/unit/conversational-agent-prompt.test.ts`, `tests/unit/tool-schemas.test.ts`, and `tests/integration/agent-tools.test.ts`; added `tests/unit/tool-activity.test.ts`; and updated this entry in `AI_LOG.md`. `README.md` was inspected but did not require synchronization because it describes grounded conversational behavior without promising the removed four-heading template or raw activity details.
+
+The focused unit run passed 20/20 tests across the prompt, tool-label and activity-rendering files. The relevant live-database integration file passed 18/18 tests. Its first run had one failure because the new `No company ... exists in the monitored universe` wording was semantically correct but no longer matched the old `not in ...` assertion; both the user-facing wording and assertion were clarified to `No monitored company was found`, then the file passed on rerun. The full gates produced these final results: `lint` passed; `typecheck` passed; the unit suite passed 266/266 tests across 27 files; and the production build passed with all routes generated.
+
+The repository-wide `format:check` remains red on 98 pre-existing files, none introduced by this revision. Scoped Prettier checks covered every file changed here, and no unrelated mass-formatting cleanup was performed. The first direct `pnpm` attempt was also blocked by the machine's PowerShell execution policy, while its `.cmd` launcher hung before printing a version; the same package scripts were therefore run through `npm.cmd`, and the focused tools were invoked from the already-installed `node_modules` binaries. The earlier first build attempt failed because the sandbox could not reach Google Fonts for Inter; rerunning with network access resolved it, and this refinement's build passed directly with that access.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:

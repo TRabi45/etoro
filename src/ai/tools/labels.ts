@@ -30,15 +30,26 @@ export const AGENT_TOOL_NAMES = [
 
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
 
-/** Human-readable labels for the "running a tool" indicator in the chat UI. */
-export const TOOL_ACTIVITY_LABELS: Record<AgentToolName, string> = {
-  search_targets: "Searching monitored targets",
-  get_company_profile: "Fetching company profile",
-  get_company_fundamentals: "Reading fundamentals",
-  compare_companies: "Comparing companies",
-  get_recent_events: "Checking recent events",
-  explain_score: "Retrieving score breakdown",
-  get_market_map: "Building market map",
-  refresh_company: "Running company research",
-  run_monitoring_quick: "Running a monitoring pass",
+export interface ToolActivityLabels {
+  running: string;
+  complete: string;
+}
+
+/** User-facing labels for tool activity, with no executor terminology. */
+export const TOOL_ACTIVITY_LABELS: Record<AgentToolName, ToolActivityLabels> = {
+  search_targets: {
+    running: "Searching monitored targets",
+    complete: "Searched monitored targets",
+  },
+  get_company_profile: { running: "Checking company profile", complete: "Checked company profile" },
+  get_company_fundamentals: { running: "Checking fundamentals", complete: "Checked fundamentals" },
+  compare_companies: { running: "Comparing companies", complete: "Compared companies" },
+  get_recent_events: { running: "Checking recent events", complete: "Checked recent events" },
+  explain_score: { running: "Checking score breakdown", complete: "Checked score breakdown" },
+  get_market_map: { running: "Building market map", complete: "Built market map" },
+  refresh_company: { running: "Researching company", complete: "Researched company" },
+  run_monitoring_quick: {
+    running: "Checking monitored sources",
+    complete: "Checked monitored sources",
+  },
 };
