@@ -45,6 +45,12 @@ export interface TargetSummary {
    */
   thesis: string | null;
   whyNow: string | null;
+  /**
+   * When a research pass last completed for this company. Null means never
+   * researched, which the UI keeps distinct from stale - nothing has gone off,
+   * nothing has been done.
+   */
+  lastResearchedAt: string | null;
   /** False when the company is still an identity with no assessment. */
   hasResearch: boolean;
 }
@@ -93,7 +99,7 @@ export async function searchTargets(
   let query = connection.client
     .from("companies")
     .select(
-      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, strategic_fit_summary, why_now, created_at)",
+      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, last_researched_at, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, strategic_fit_summary, why_now, created_at)",
     )
     // Screened-out rows were never targets; precedents are real but unavailable.
     // Neither belongs in a ranked target search.
@@ -151,6 +157,7 @@ export async function searchTargets(
       recommendation: latestScore?.recommendation ?? null,
       thesis: latestAssessment?.strategic_fit_summary ?? null,
       whyNow: latestAssessment?.why_now ?? null,
+      lastResearchedAt: row.last_researched_at,
       hasResearch: assessments.length > 0,
     };
   });
