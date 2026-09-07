@@ -22,6 +22,12 @@ import {
   discoverCandidates,
   type FeedDefinition,
 } from "@/src/research/sources/feeds";
+import {
+  listCompaniesDueForRefresh,
+  markCompanyMaterialChange,
+} from "@/src/db/repositories/company-tiers";
+import { researchCompany } from "@/src/research/pipeline/company-research";
+import { analyzeCompanyEvidence } from "@/src/ai/provider-adapter";
 import { createHash } from "node:crypto";
 
 /**
@@ -50,6 +56,22 @@ export interface MonitoringRunOptions {
   feeds?: FeedDefinition[];
   /** Injected by tests to simulate an unreachable host without a network. */
   fetchImpl?: typeof fetch;
+  /**
+   * How many eligible `indexed` companies to research automatically once this
+   * pass finishes. Defaults to 1 - workstream E's "at most one eligible
+   * indexed or newly discovered company," configurable and bounded rather
+   * than hard-coded. Pass 0 to disable, which the chat-triggered quick run
+   * does: a company-research pass does not fit inside that turn's budget.
+   */
+  autoEnrichLimit?: number;
+  /** Injected by tests so auto-enrichment never calls a real provider. */
+  researchAnalyzeImpl?: typeof analyzeCompanyEvidence;
+}
+
+export interface EnrichedCompanySummary {
+  slug: string;
+  status: string;
+  scored: boolean;
 }
 
 export interface MonitoringRunReport {
@@ -63,7 +85,11 @@ export interface MonitoringRunReport {
   eventsWritten: number;
   companiesDiscovered: number;
   warnings: string[];
+  /** Companies auto-enriched after this pass. Empty when nothing was eligible, or on a reused run. */
+  enrichedCompanies: EnrichedCompanySummary[];
 }
+
+const DEFAULT_AUTO_ENRICH_LIMIT = 1;
 
 export const DEFAULT_MAX_SOURCES = 5;
 const PER_FEED_LIMIT = 8;
@@ -416,6 +442,9 @@ async function processOneSource(
       }
       if ((inserted.data ?? []).length > 0) {
         eventsWritten += 1;
+        if (event.materiality === "medium" || event.materiality === "high") {
+          await markCompanyMaterialChange(client, companyId);
+        }
       }
     } catch (cause) {
       warnings.push(
@@ -476,6 +505,7 @@ export async function runMonitoringPass(
         ...existingRun.warnings,
         `A run already exists for "${idempotencyKey}"; returning its recorded result instead of fetching again.`,
       ],
+      enrichedCompanies: [],
     };
   }
 
@@ -556,7 +586,54 @@ export async function runMonitoringPass(
     warnings.push(fatal);
   }
 
-  // --- Step 8: finalise ---------------------------------------------------
+  // --- Step 8: auto-enrich a bounded handful of eligible companies --------
+  //
+  // Workstream E: a company does not wait for human review merely because it
+  // was discovered - but nothing here is unbounded. `autoEnrichLimit` caps
+  // how many `indexed` companies get a real research pass per monitoring
+  // pass, and a failure enriching one company costs that company, never this
+  // monitoring run.
+  //
+  // This runs *before* the run is finalised, so its warnings are persisted
+  // with the run rather than existing only in the HTTP response. Enrichment
+  // is the part of a pass most likely to fail quietly - a scheduled run
+  // nobody is watching is exactly where that must be on the record.
+  const enrichedCompanies: EnrichedCompanySummary[] = [];
+  const autoEnrichLimit = options.autoEnrichLimit ?? DEFAULT_AUTO_ENRICH_LIMIT;
+  if (!fatal && autoEnrichLimit > 0) {
+    try {
+      const due = await listCompaniesDueForRefresh(client, new Date().toISOString(), 50);
+      const eligible = due
+        .filter((company) => company.researchTier === "indexed")
+        .slice(0, autoEnrichLimit);
+
+      for (const company of eligible) {
+        try {
+          const research = await researchCompany({
+            slug: company.slug,
+            trigger: "scheduled",
+            fetchImpl: options.fetchImpl,
+            analyzeImpl: options.researchAnalyzeImpl,
+          });
+          enrichedCompanies.push({
+            slug: company.slug,
+            status: research.status,
+            scored: research.scored,
+          });
+        } catch (cause) {
+          warnings.push(
+            `Auto-enrichment failed for "${company.slug}": ${cause instanceof Error ? cause.message : "unknown error"}`,
+          );
+        }
+      }
+    } catch (cause) {
+      warnings.push(
+        `Could not select companies for auto-enrichment: ${cause instanceof Error ? cause.message : "unknown error"}`,
+      );
+    }
+  }
+
+  // --- Step 9: finalise ---------------------------------------------------
   const status: RunStatus = fatal
     ? "failed"
     : warnings.length > 0
@@ -595,5 +672,6 @@ export async function runMonitoringPass(
     eventsWritten,
     companiesDiscovered,
     warnings,
+    enrichedCompanies,
   };
 }

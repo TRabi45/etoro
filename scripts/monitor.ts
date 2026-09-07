@@ -54,6 +54,13 @@ async function main(): Promise<void> {
     `  wrote ${report.claimsWritten} claim(s), ${report.eventsWritten} event(s), ${report.companiesDiscovered} new compan(ies)`,
   );
 
+  if (report.enrichedCompanies.length > 0) {
+    console.log(`\n  auto-enriched ${report.enrichedCompanies.length} compan(ies):`);
+    for (const company of report.enrichedCompanies) {
+      console.log(`   - ${company.slug}: ${company.status}${company.scored ? ", scored" : ""}`);
+    }
+  }
+
   if (report.warnings.length > 0) {
     console.log(`\n  ${report.warnings.length} warning(s):`);
     for (const warning of report.warnings) {

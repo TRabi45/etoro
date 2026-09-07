@@ -25,6 +25,28 @@ export interface SearchProviderAdapter {
   search(query: string, options: { limit: number }): Promise<SearchResult[]>;
 }
 
+export interface SearchProviderCapability {
+  configured: boolean;
+  warning: string;
+}
+
+/**
+ * No vendor adapter is registered in this milestone. A key by itself must not
+ * make callers believe search ran: it is configuration for a future adapter,
+ * not an implementation.
+ */
+export function getSearchProviderCapability(
+  env: NodeJS.ProcessEnv = process.env,
+): SearchProviderCapability {
+  const keyPresent = Boolean(env.SEARCH_PROVIDER_API_KEY?.trim());
+  return {
+    configured: false,
+    warning: keyPresent
+      ? "SEARCH_PROVIDER_API_KEY is set, but no search-provider adapter is registered; search leads were not resolved."
+      : "No search provider is configured (SEARCH_PROVIDER_API_KEY is unset); search leads were not resolved.",
+  };
+}
+
 export function isSearchProviderConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.SEARCH_PROVIDER_API_KEY && env.SEARCH_PROVIDER_API_KEY.trim() !== "");
+  return getSearchProviderCapability(env).configured;
 }

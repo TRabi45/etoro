@@ -2,6 +2,7 @@ import { z } from "zod";
 import { checkAiConfigured } from "@/src/ai/provider-adapter";
 import { DEFAULT_MAX_SOURCES, runMonitoringPass } from "@/src/research/pipeline/runner";
 import { checkRateLimit, clientAddress, MONITOR_RUN_RULE } from "@/src/server/rate-limit";
+import { authorizeOperatorRequest } from "@/src/server/operator-auth";
 
 /**
  * Manual monitoring trigger.
@@ -36,6 +37,17 @@ function jsonError(status: number, code: string, message: string, headers?: Head
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const authorization = authorizeOperatorRequest(request);
+  if (!authorization.ok) {
+    return jsonError(
+      authorization.status,
+      authorization.code,
+      authorization.code === "operator_secret_unconfigured"
+        ? "Monitoring execution is disabled until MA_OPERATOR_SECRET is configured on the server."
+        : "This endpoint requires internal operator authorization.",
+    );
+  }
+
   // A monitoring run is the most expensive thing this application does: several
   // fetches plus a model call per document. Throttled hard, and before anything
   // else happens.
@@ -74,6 +86,14 @@ export async function POST(request: Request): Promise<Response> {
       trigger: "manual",
       maxSources: parsed.data.maxSources ?? DEFAULT_MAX_SOURCES,
       idempotencyKey: parsed.data.idempotencyKey,
+      // This route's own `maxDuration` (300s) is already sized for the
+      // monitoring pass alone; a company-research pass on top of it (up to
+      // ~90s of fetching plus up to 240s of analysis) risks the platform
+      // killing the function mid-work, which is exactly the "progress that
+      // is not happening" failure mode this endpoint is designed to avoid.
+      // Auto-enrichment stays on the scheduled/CLI path, which has no such
+      // ceiling.
+      autoEnrichLimit: 0,
     });
 
     // 200 even for `partial_success`: the run completed and produced data. A

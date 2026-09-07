@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   console.log(`  fundamentals:   ${summary.fundamentalAnalysisId}`);
   console.log(`  assessment:     ${summary.assessmentId}`);
   console.log(
-    `  score:          ${summary.scoreId}${summary.scoreCreated ? "" : " (unchanged inputs, existing score reused)"}`,
+    `  score:          ${summary.scoreId ?? "not written"}${summary.scoreCreated ? "" : " (unchanged inputs, existing score reused or entity-blocked)"}`,
   );
   console.log("");
   console.log(`  model version:  ${result.modelVersion}`);

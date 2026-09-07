@@ -1,5 +1,5 @@
 import { FETCH_TIMEOUT_MS, MAX_RESPONSE_BYTES } from "@/src/research/sources/fetcher";
-import { isSearchProviderConfigured } from "@/src/research/sources/search-provider";
+import { getSearchProviderCapability } from "@/src/research/sources/search-provider";
 
 /**
  * Bounded, company-specific source planning (workstream C).
@@ -166,10 +166,11 @@ export function buildCompanySourcePlan(input: BuildCompanySourcePlanInput): Comp
   // No provider ships in this milestone (see search-provider.ts), so every
   // recorded lead is an explicit, visible coverage gap rather than a silently
   // shorter plan.
-  if (input.searchLeads.length > 0 && !isSearchProviderConfigured()) {
+  const searchCapability = getSearchProviderCapability();
+  if (input.searchLeads.length > 0 && !searchCapability.configured) {
     const labels = input.searchLeads.map((lead) => lead.label).join(", ");
     warnings.push(
-      `${input.searchLeads.length} search lead(s) recorded (${labels}) could not be resolved: no search provider is configured (SEARCH_PROVIDER_API_KEY unset). Coverage is limited to the primary domain and existing evidence.`,
+      `${input.searchLeads.length} search lead(s) recorded (${labels}) could not be resolved: ${searchCapability.warning} Coverage is limited to the primary domain and existing evidence.`,
     );
   }
 

@@ -169,11 +169,14 @@ function readPublishedAt(html: string): string | null {
  * than buffered. The bytes already read are kept: a truncated article is still
  * evidence, and discarding it would turn a large page into a total loss.
  */
-async function readBounded(response: Response): Promise<{ text: string; bytes: number }> {
+async function readBounded(
+  response: Response,
+  maxResponseBytes: number,
+): Promise<{ text: string; bytes: number }> {
   const body = response.body;
   if (!body) {
     const text = await response.text();
-    return { text: text.slice(0, MAX_RESPONSE_BYTES), bytes: text.length };
+    return { text: text.slice(0, maxResponseBytes), bytes: text.length };
   }
 
   const reader = body.getReader();
@@ -187,7 +190,7 @@ async function readBounded(response: Response): Promise<{ text: string; bytes: n
       if (!value) continue;
       chunks.push(value);
       bytes += value.byteLength;
-      if (bytes >= MAX_RESPONSE_BYTES) {
+      if (bytes >= maxResponseBytes) {
         break;
       }
     }
@@ -208,6 +211,7 @@ async function readBounded(response: Response): Promise<{ text: string; bytes: n
 
 export interface FetchSourceOptions {
   timeoutMs?: number;
+  maxResponseBytes?: number;
   /** Injected in tests so a failing host can be simulated without a network. */
   fetchImpl?: typeof fetch;
 }
@@ -217,6 +221,7 @@ export async function fetchSource(
   options: FetchSourceOptions = {},
 ): Promise<FetchOutcome> {
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const maxResponseBytes = options.maxResponseBytes ?? MAX_RESPONSE_BYTES;
   const doFetch = options.fetchImpl ?? fetch;
 
   // Normalisation produces the *storage* key, never the request target.
@@ -245,35 +250,62 @@ export async function fetchSource(
     return { ok: false, reason: hostProblem };
   }
 
-  const requestUrl = target.toString();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await doFetch(requestUrl, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        // Identifying the crawler is the minimum courtesy owed to a site being
-        // read automatically.
-        "user-agent": "eToro-MA-Intelligence-Agent/0.1 (internal research prototype)",
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
+    let requestTarget = target;
+    let response: Response | null = null;
+    const MAX_REDIRECTS = 5;
+
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+      response = await doFetch(requestTarget.toString(), {
+        signal: controller.signal,
+        // Redirects are followed manually. With `follow`, the private target
+        // has already received a request by the time response.url can be
+        // inspected, which defeats SSRF protection.
+        redirect: "manual",
+        headers: {
+          "user-agent": "eToro-MA-Intelligence-Agent/0.1 (internal research prototype)",
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+
+      if (response.status < 300 || response.status >= 400) break;
+
+      const location = response.headers.get("location");
+      if (!location) {
+        return { ok: false, reason: `redirect ${response.status} had no Location header` };
+      }
+      if (redirects === MAX_REDIRECTS) {
+        return { ok: false, reason: `too many redirects (maximum ${MAX_REDIRECTS})` };
+      }
+
+      let nextTarget: URL;
+      try {
+        nextTarget = new URL(location, requestTarget);
+      } catch {
+        return { ok: false, reason: "redirect Location was not a valid URL" };
+      }
+      if (nextTarget.protocol !== "http:" && nextTarget.protocol !== "https:") {
+        return { ok: false, reason: `redirect used unsupported scheme ${nextTarget.protocol}` };
+      }
+      const redirectProblem = await assertPublicHost(nextTarget.hostname);
+      if (redirectProblem) {
+        return { ok: false, reason: `redirect refused: ${redirectProblem}` };
+      }
+      requestTarget = nextTarget;
+    }
+
+    if (!response) {
+      return { ok: false, reason: "no response received" };
+    }
 
     if (!response.ok) {
-      return { ok: false, reason: `HTTP ${response.status} from ${target.hostname}` };
+      return { ok: false, reason: `HTTP ${response.status} from ${requestTarget.hostname}` };
     }
 
-    // A redirect can land somewhere the pre-flight check never saw.
-    const finalUrl = response.url || requestUrl;
-    const finalHost = new URL(finalUrl).hostname;
-    if (finalHost !== target.hostname) {
-      const redirectProblem = await assertPublicHost(finalHost);
-      if (redirectProblem) {
-        return { ok: false, reason: `after redirect: ${redirectProblem}` };
-      }
-    }
+    const finalUrl = requestTarget.toString();
 
     const contentType = response.headers.get("content-type") ?? "";
     // `text/xml` is as common as `application/xml` for RSS and means the same
@@ -282,7 +314,7 @@ export async function fetchSource(
       return { ok: false, reason: `unsupported content-type "${contentType}"` };
     }
 
-    const { text: raw, bytes } = await readBounded(response);
+    const { text: raw, bytes } = await readBounded(response, maxResponseBytes);
     const text = htmlToText(raw).slice(0, MAX_EXTRACT_CHARS);
 
     if (text.length < 200) {

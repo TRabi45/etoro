@@ -25,6 +25,7 @@
     "db:verify": "tsx scripts/verify-db.ts",
     "slice:run": "tsx scripts/run_vertical_slice.ts",
     "monitor": "tsx scripts/monitor.ts",
+    "research": "tsx scripts/research.ts",
     "agent:ask": "tsx scripts/ask-agent.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
