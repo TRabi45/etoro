@@ -774,6 +774,52 @@ Final gates: `npm.cmd run lint` passed; `npm.cmd run typecheck` passed after cor
 
 ---
 
+## Milestone 19A.1 — Universe Data Model: Specification and Acceptance Tests First
+
+### Why the milestone was split before any code was written
+
+Milestone 19A introduces the data model that Universe expansion will sit on: external identifiers, discovery provenance, and a canonical company stage. The obvious way to build it is to write the migration first and then write tests against it. That was rejected deliberately. A test suite written after an implementation only proves that the implementation agrees with itself; it cannot catch a schema that encodes the wrong idea, because the schema is what the assertions were read off. Since this model will decide how every future provider record is identified, de-duplicated and resolved, agreeing on the behavior first was worth an extra phase.
+
+So 19A was split. Phase 19A.1 — this entry — defines the contract and writes the acceptance suite, runs it, and records the failures. Phase 19A.2 will implement the schema and move those tests from RED to GREEN without being allowed to weaken them. No production migration, repository, type, provider adapter or UI change was written in this phase, and none was applied to the database.
+
+### The contract
+
+`docs/UNIVERSE_DATA_MODEL_19A.md` states the contract in prose. Three concepts:
+
+**Company external identifiers.** One canonical company may hold many identifiers; each is namespaced by a `provider` stored as extensible text rather than a closed enum, because the whole purpose of the namespace is to admit sources the schema was never told about. The pair `(provider, external_id)` identifies at most one canonical company and supports exact lookup.
+
+**Discovery observations.** These record how an entity was discovered, and are explicitly not research evidence. `company_id` is nullable, because an observation routinely exists before a canonical company does, and can be filled in later. The row keeps the provider, the observed name, an optional observed domain and geography, an optional source record ID and URL, `first_seen_at`, `last_seen_at`, and optional raw metadata. Where a provider supplies a stable record ID, re-observing it updates the existing row rather than accumulating duplicates: `first_seen_at` stays the earliest sighting and `last_seen_at` advances. Nothing is specified for observations with no stable record ID. Raw provider metadata must not reach ordinary user-facing reads.
+
+**Company stage.** A new canonical field over `pre_seed`, `seed`, `series_a`, `series_b`, `series_c_plus`, `growth`, `late_stage`, `public`, `bootstrapped`, `unknown`, with `unknown` as the truthful default. The existing schema was checked for an equivalent before adding one: `ma_state` is ownership and transaction availability, `lifecycle_status` is the discovery and screening workflow, and `research_state` is the completeness of the last research pass. None of them expresses company maturity, so stage is a genuinely new axis rather than a duplicate. One trap was recorded rather than silently resolved: the Targets filter and the Agent tool schema already use the word "stage" as an alias for `ma_state`, so 19A.2 must preserve or rename that filter deliberately and must not quietly reinterpret it as maturity.
+
+### How the tests are written, and why at the persistence boundary
+
+`tests/integration/universe-data-model.test.ts` holds fifteen tests covering the twelve required behaviors. They assert against the database rather than against a repository, for two reasons. The generated database types cannot describe tables that do not exist, so a repository-shaped test would have failed by failing to resolve a module — a compile error, not evidence about behavior. And the contract is genuinely about what the database guarantees; 19A.2 should stay free to choose the TypeScript API, the index names, the constraint names and the RLS mechanism. The new-model reads and writes therefore go through a deliberately untyped Supabase client and are validated with the Zod contract schemas in `tests/specifications/universe-data-model.ts`; tables that already exist are still read through the typed client.
+
+Every test that asserts a privacy or rejection property was written so that it cannot pass vacuously. The ambiguity test (E) first asserts that the first company successfully claims the identity, so it cannot go green merely because both writes failed. The raw-metadata test (K) first asserts that the internal path really stored the payload, so it cannot go green merely because nothing was ever written. The same applies to L2.
+
+### Pre-implementation RED results
+
+The suite was run against the live local database before any implementation existed: **12 failed, 3 passed, of 15**.
+
+The twelve failures are all missing-feature failures, and nothing else. `B` fails with Postgres `42703`, `column companies.company_stage does not exist`. `C`, `D`, `E`, `F`, `F2` and `L2` fail with PostgREST `PGRST205`, `Could not find the table 'public.company_external_ids' in the schema cache`. `G`, `H`, `I`, `J` and `K` fail with the same code for `public.company_discovery_observations`. There are no assertion failures caused by a wrong expectation, no configuration failures and no import failures.
+
+The three passing tests are the compatibility guards, and they are supposed to be green now and to stay green after 19A.2. `A` proves the six bootstrap identities still match the seed definition field for field. `A2` proves the database contains no company beyond those six, measured from a snapshot taken before the suite inserted its own fixtures. `L` proves Milestone 18's isolation still holds: a company introduced by a synthetic run is visible to the service role and invisible to an anon read.
+
+The suite creates its own throwaway identities and a synthetic run and deletes them again; cleanup for the two future tables is best-effort, since they do not exist yet. The six bootstrap companies were re-checked after the run and were unchanged, still six rows, still `bootstrap_identity` and `research_pending` with a null `ma_state`.
+
+### What was explicitly not done
+
+No migration was written or applied. No repository function, no generated type change, no provider adapter, no entity resolution, no fuzzy matching, no Universe classification, no tier promotion, no monitoring cadence change, no Stage filter in the UI. The database schema is byte-for-byte what Milestone 18 left. This phase stops at RED on purpose and waits for approval before implementing.
+
+### Gates and an unrelated finding
+
+`npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd test` (266/266 across 27 files) and `npm.cmd run build` (11 routes) all passed. Prettier was run on the three files this phase introduces; the two written earlier in the phase each carried one trailing blank line, which was corrected. The known repository-wide Prettier backlog was left alone.
+
+One unrelated pre-existing defect was found and deliberately not fixed, because it belongs to Milestone 18 rather than to this milestone. `tests/integration/stub-intelligence-isolation.test.ts` test `E` ends with `expect(JSON.stringify(explanation)).not.toContain("99")`, where `99` is the synthetic score. The envelope it stringifies also contains the fixture slug, which embeds `Date.now()`, and an `asOf` ISO timestamp. Either can contain the literal characters `99` without any score having leaked. It failed once during a full-suite run here and then passed six consecutive focused runs; simulating the exact string construction puts the false-failure rate at about 6% per run, roughly 6% from the timestamped slug and 1.9% from `asOf`. The isolation property itself is sound and is independently proven by the same file's test `F`; only the substring assertion is unreliable. It is recorded here for a later milestone to tighten.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
