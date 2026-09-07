@@ -21,24 +21,59 @@ import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools/untrusted";
  * untrusted-source-text rules were added, to v3 when `run_monitoring_quick`
  * stopped being a stub, to v4 when the recommendation-language section still
  * described v0.2 (`acquireBlockers`, a field that was never shipped for
- * v0.3), and to v5 when `refresh_company` stopped being a stub - answers
- * produced under an earlier wording stay attributable to it rather than
- * being retroactively credited with rules, or capabilities, they did not
- * have.
+ * `v0.3`), to v5 when `refresh_company` stopped being a stub, and to v6 when
+ * the prompt began receiving the screen, active filters and comparison set the
+ * analyst is actually looking at - answers produced under an earlier wording
+ * stay attributable to it rather than being retroactively credited with rules,
+ * or capabilities, they did not have.
  */
-export const CONVERSATIONAL_AGENT_PROMPT_VERSION = "conversational-agent/v5";
+export const CONVERSATIONAL_AGENT_PROMPT_VERSION = "conversational-agent/v6";
 
 export interface ConversationalAgentContext {
   /** The company whose page the user is on, if any. */
   selectedCompanySlug: string | null;
   selectedCompanyName: string | null;
+  /** Which screen the analyst is on, from a fixed set. Null before it is known. */
+  screen?: string | null;
+  /** Filters currently narrowing the list the analyst can see. */
+  activeFilters?: readonly { label: string; value: string }[];
+  /** Slugs selected for comparison, already checked to exist. */
+  comparisonSlugs?: readonly string[];
   currentDate: string;
 }
 
 export function buildConversationalAgentPrompt(context: ConversationalAgentContext): string {
-  const pageContext = context.selectedCompanySlug
+  const companyContext = context.selectedCompanySlug
     ? `The user is currently viewing the profile page for "${context.selectedCompanyName ?? context.selectedCompanySlug}" (slug: ${context.selectedCompanySlug}). Resolve pronouns and implicit references - "they", "this company", "their revenue", "explain their score" - to this company unless the user clearly names another one.`
-    : `The user is on the dashboard and has not selected a company. If they use an implicit reference such as "they" or "this company" and you cannot tell who they mean from the conversation, ask which company they mean instead of guessing.`;
+    : `The user has not selected a company. If they use an implicit reference such as "they" or "this company" and you cannot tell who they mean from the conversation, ask which company they mean instead of guessing.`;
+
+  const screenContext = context.screen
+    ? `The user is on the ${context.screen} screen.`
+    : `The screen the user is on is not known.`;
+
+  /**
+   * Active filters change what "these", "the list" and "all of them" mean. An
+   * answer that silently ranges over the whole universe while the analyst is
+   * looking at four German companies is wrong in the way that matters most -
+   * it looks right.
+   */
+  const filters = context.activeFilters ?? [];
+  const filterContext =
+    filters.length > 0
+      ? `The list in front of them is filtered by: ${filters
+          .map((filter) => `${filter.label} = ${filter.value}`)
+          .join("; ")}. When the user says "these", "the list" or "all of them", they mean the filtered set. If your answer ranges wider than the filter, say so explicitly.`
+      : `No filters are applied to the list in front of them.`;
+
+  const comparison = context.comparisonSlugs ?? [];
+  const comparisonContext =
+    comparison.length > 0
+      ? `They have selected these companies for comparison: ${comparison.join(", ")}. "Compare them" means exactly this set.`
+      : ``;
+
+  const pageContext = [screenContext, companyContext, filterContext, comparisonContext]
+    .filter((line) => line !== "")
+    .join("\n\n");
 
   return `You are the M&A Intelligence Agent for eToro's Corporate Development team. You help an analyst review, challenge and compare acquisition targets.
 
@@ -86,10 +121,26 @@ your operator.
 - The recommendation is a separate decision from the score, and a hard gate overrides both: a high score with an unresolved gate is still blocked. When \`explain_score\` returns non-empty \`blockingGates\`, those are the reasons - state them, and name the gate, not just "blocked".
 - When recommending or discussing a target, include the trade-offs: risks, the counter-thesis, and what is still unknown. A recommendation with no counter-argument is not useful to an analyst.
 
+## Shape of an answer
+
+Separate the four things an analyst needs, so none of them hides inside another. Use these exact headings, and omit a section only when it genuinely does not apply:
+
+**Answer** - one or two direct sentences. The conclusion first, never a preamble.
+
+**Why it matters** - the implication for eToro specifically: a gap closed, a permission gained, a competitor move that changes timing. Not a restatement of the answer, and not a summary of the article.
+
+**Evidence** - what the claim rests on, with citation markers, and the labels that qualify it: company-reported, estimate, unknown, conflicting, stale. If the evidence is thin, say what could not be verified.
+
+**Next step** - one concrete action. One, not a menu.
+
+Keep the whole reply short by default. An analyst reading four tight sections will ask for more; one reading four paragraphs will stop reading.
+
 ## Style
 
 - Write for a Corporate Development analyst: direct, specific, no filler. Lead with the answer.
-- Use short Markdown sections or bullets when comparing things. Keep prose tight.
+- Speak in the first person about what you did and found: "I found", "I could not verify", "the evidence suggests", "my recommended next step is". Calm and collaborative, never salesy.
+- No greetings, no "great question", no emoji, no hype, and no manufactured certainty.
+- Never imply that a score approves a transaction, and never drop the counter-thesis to make an answer tidier.
 - Be explicit about the limits of what you know. Confidence you have not earned is worse than an admission of ignorance.
 - If a question is ambiguous and the page context does not resolve it, ask one specific clarifying question rather than answering the wrong question at length.`;
 }

@@ -1,137 +1,164 @@
+import Link from "next/link";
 import { connection } from "next/server";
-import { ChatPanel } from "@/components/chat/chat-panel";
-import { CompanyList } from "@/components/company/company-list";
-import { EventsFeed } from "@/components/dashboard/events-feed";
-import { RunStatus } from "@/components/dashboard/run-status";
-import { Notice } from "@/components/ui/notice";
-import { listCompanies } from "@/src/db/repositories/companies";
-import { getRecentEvents } from "@/src/db/repositories/events";
-import { getRecentRuns } from "@/src/db/repositories/monitoring-runs";
-
-/** The feed's window. Long enough to have content, short enough to be "recent". */
-function sinceDaysAgo(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-}
+import { getMorningBrief } from "@/src/db/repositories/briefing";
+import { MorningBrief } from "@/components/briefing/morning-brief";
+import { AttentionRow } from "@/components/briefing/attention-row";
+import { MaterialEventRow } from "@/components/briefing/material-event-row";
+import { TopOpportunities } from "@/components/briefing/top-opportunities";
+import { SystemStatus } from "@/components/briefing/system-status";
+import { StartHere } from "@/components/briefing/start-here";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
 
 /**
- * The dashboard shell.
+ * The briefing - the default landing page.
  *
- * This page exists to prove one thing end to end: the UI renders rows that came
- * out of Supabase through the repository layer. It is intentionally small. There
- * is no score, no profile, no chat and no AI output in this milestone, and no
- * placeholder pretending otherwise.
+ * Ordered by what the analyst needs to know, not by what is easy to render:
+ * the colleague summary, then what needs attention, then the ranked
+ * opportunities, then the raw feed, then a quiet status strip. There are no KPI
+ * cards at the top, because a row of totals answers a question nobody opening
+ * this page is asking.
  *
- * `connection()` moves rendering to request time. Without it Next would try to
- * prerender this page during `next build`, where no database credentials exist -
- * and a build-time snapshot of a monitoring product would be wrong anyway.
+ * `getMorningBrief` never fails as a whole - it degrades - so this page has no
+ * error branch of its own. What could not be read is named inside the status
+ * strip, and everything that could be read still renders. A partial brief is
+ * far more useful than an error page, and hiding the good half to report the
+ * bad one would be the wrong trade every morning.
+ *
+ * `connection()` moves rendering to request time; a build-time snapshot of a
+ * monitoring product's front page would be wrong the moment it was taken.
  */
-export default async function DashboardPage() {
+export default async function BriefingPage() {
   await connection();
-  // Fetched together: three independent reads, and one failing should not delay
-  // the other two.
-  const [result, runs, events] = await Promise.all([
-    listCompanies(),
-    getRecentRuns(1),
-    getRecentEvents({ sinceDate: sinceDaysAgo(30), limit: 10 }),
-  ]);
-
-  const latestRun = runs.ok ? (runs.data[0] ?? null) : null;
+  const brief = await getMorningBrief();
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-5 py-10">
-      <header className="border-b border-slate-200 pb-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          eToro Corporate Development
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">M&amp;A Intelligence Agent</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          Monitored universe, served from the database through the repository layer. The monitoring
-          pipeline fetches sources, extracts claims and events, and resolves company identities;
-          every record below traces back to a run and a source.
-        </p>
-      </header>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-6">
+      <div className="flex flex-col gap-3">
+        <h1 className="text-page font-semibold text-primary">Briefing</h1>
+        <StartHere />
+      </div>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Last monitoring run
-        </h2>
-        <div className="mt-4">
-          {latestRun ? (
-            <RunStatus run={latestRun} />
+      <MorningBrief brief={brief} />
+
+      <section aria-labelledby="needs-attention-heading">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="needs-attention-heading" className="text-section font-semibold text-primary">
+            Needs attention
+          </h2>
+          <span className="text-caption text-tertiary">
+            Blocked gates first, then material events
+          </span>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-card border border-border bg-surface">
+          {brief.needsAttention.length > 0 ? (
+            <ul>
+              {brief.needsAttention.map((item, index) => (
+                <AttentionRow key={`${item.reason}-${item.target?.slug ?? index}`} item={item} />
+              ))}
+            </ul>
           ) : (
-            <Notice tone="neutral" title="The pipeline has not run yet">
-              <p>
-                Start one with <code className="font-mono">pnpm monitor</code>, or POST to{" "}
-                <code className="font-mono">/api/monitor/run</code>. It runs daily on a schedule
-                once deployed.
-              </p>
-            </Notice>
+            <div className="p-5">
+              <EmptyState
+                icon="check-circle"
+                title="Nothing needs attention"
+                nextStep={
+                  <>
+                    No target is blocked by a gate, none is scored on evidence below the floor, and
+                    no high-materiality event was recorded in the last two weeks. This says what the
+                    pipeline has recorded, not what happened in the world - run intelligence to
+                    check for anything newer.
+                  </>
+                }
+              />
+            </div>
           )}
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Recent events
-        </h2>
-        <div className="mt-4">
-          {events.ok && events.data.length > 0 ? (
-            <EventsFeed events={events.data} />
+      <section aria-labelledby="top-opportunities-heading">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="top-opportunities-heading" className="text-section font-semibold text-primary">
+            Top opportunities
+          </h2>
+          <Link
+            href="/targets"
+            className="inline-flex items-center gap-1 rounded text-body font-medium text-primary motion-standard transition-colors hover:text-brand-hover"
+          >
+            All targets
+            <Icon name="chevron-right" size={16} />
+          </Link>
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-card border border-border bg-surface">
+          {brief.topOpportunities.length > 0 ? (
+            <TopOpportunities targets={brief.topOpportunities} />
           ) : (
-            <Notice tone="neutral" title="No events recorded in the last 30 days">
-              <p>
-                Nothing has been <em>recorded</em>, which is not the same as nothing having
-                happened. Events appear here once a monitoring run extracts them from a fetched
-                source.
-              </p>
-            </Notice>
+            <div className="p-5">
+              <EmptyState
+                icon="targets"
+                title="No company has been scored yet"
+                nextStep={
+                  <>
+                    The universe holds{" "}
+                    <span className="tabular font-medium text-primary">
+                      {brief.newTargets.length}
+                    </span>{" "}
+                    {brief.newTargets.length === 1 ? "company" : "companies"} with no assessment.
+                    Scoring happens after a research pass gathers evidence - until then they are
+                    identities, not candidates.
+                  </>
+                }
+                action={
+                  <Link
+                    href="/targets"
+                    className="inline-flex h-10 items-center gap-1.5 rounded-control border border-border-strong bg-surface px-3.5 text-body font-medium text-primary motion-standard transition-colors hover:bg-surface-subtle"
+                  >
+                    Browse the universe
+                    <Icon name="chevron-right" size={16} />
+                  </Link>
+                }
+              />
+            </div>
           )}
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Monitored companies
-        </h2>
+      <section aria-labelledby="material-changes-heading">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="material-changes-heading" className="text-section font-semibold text-primary">
+            Latest material changes
+          </h2>
+          <span className="text-caption text-tertiary">Last 14 days</span>
+        </div>
 
-        <div className="mt-4">
-          {!result.ok && result.problem.kind === "configuration" ? (
-            <Notice tone="warning" title="Supabase is not configured">
-              <p>{result.problem.message}</p>
-              <p className="mt-2">
-                Run <code className="font-mono">pnpm db:start</code>, copy the printed values into{" "}
-                <code className="font-mono">.env.local</code>, then{" "}
-                <code className="font-mono">pnpm db:reset &amp;&amp; pnpm db:seed</code>.
-              </p>
-            </Notice>
-          ) : null}
-
-          {!result.ok && result.problem.kind === "database" ? (
-            <Notice tone="error" title="The database could not be reached">
-              <p>{result.problem.message}</p>
-              <p className="mt-2">
-                Nothing is shown rather than a partial list, so this page never implies the universe
-                is smaller than it is.
-              </p>
-            </Notice>
-          ) : null}
-
-          {result.ok && result.data.length === 0 ? (
-            <Notice tone="neutral" title="No companies yet">
-              <p>
-                The database is reachable and empty. Seed the bootstrap identities with{" "}
-                <code className="font-mono">pnpm db:seed</code>.
-              </p>
-            </Notice>
-          ) : null}
-
-          {result.ok && result.data.length > 0 ? <CompanyList companies={result.data} /> : null}
+        <div className="mt-3 overflow-hidden rounded-card border border-border bg-surface">
+          {brief.materialChanges.length > 0 ? (
+            <ul>
+              {brief.materialChanges.slice(0, 8).map((event) => (
+                <MaterialEventRow key={event.id} event={event} />
+              ))}
+            </ul>
+          ) : (
+            <div className="p-5">
+              <EmptyState
+                icon="monitoring"
+                title="No events recorded in the last 14 days"
+                nextStep={
+                  <>
+                    Nothing has been <em>recorded</em>, which is not the same as nothing having
+                    happened. Events appear here once a monitoring run extracts them from a fetched
+                    source.
+                  </>
+                }
+              />
+            </div>
+          )}
         </div>
       </section>
 
-      {/* No company is selected here, so the agent will ask which company the
-          user means rather than guessing at an implicit reference. */}
-      <ChatPanel />
-    </main>
+      <SystemStatus status={brief.systemStatus} />
+    </div>
   );
 }

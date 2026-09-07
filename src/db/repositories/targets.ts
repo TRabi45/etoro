@@ -37,6 +37,14 @@ export interface TargetSummary {
   lowerBound: number | null;
   upperBound: number | null;
   recommendation: RecommendationState | null;
+  /**
+   * The one-line acquisition thesis and the timing argument, both from the
+   * latest assessment. Null when nobody has assessed the company - which the
+   * UI shows as an explicit gap rather than an empty cell, so "no thesis
+   * written" never reads as "no thesis exists".
+   */
+  thesis: string | null;
+  whyNow: string | null;
   /** False when the company is still an identity with no assessment. */
   hasResearch: boolean;
 }
@@ -63,6 +71,8 @@ interface ScoreRow {
 interface AssessmentRow {
   id: string;
   path: TargetPath;
+  strategic_fit_summary: string | null;
+  why_now: string | null;
   created_at: string;
 }
 
@@ -83,7 +93,7 @@ export async function searchTargets(
   let query = connection.client
     .from("companies")
     .select(
-      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, created_at)",
+      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, strategic_fit_summary, why_now, created_at)",
     )
     // Screened-out rows were never targets; precedents are real but unavailable.
     // Neither belongs in a ranked target search.
@@ -139,6 +149,8 @@ export async function searchTargets(
       lowerBound: latestScore?.lower_bound ?? null,
       upperBound: latestScore?.upper_bound ?? null,
       recommendation: latestScore?.recommendation ?? null,
+      thesis: latestAssessment?.strategic_fit_summary ?? null,
+      whyNow: latestAssessment?.why_now ?? null,
       hasResearch: assessments.length > 0,
     };
   });

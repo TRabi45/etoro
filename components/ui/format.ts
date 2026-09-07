@@ -144,3 +144,36 @@ export function formatCountry(country: string | null | undefined): string | null
   }
   return country.trim();
 }
+
+/**
+ * Small counts as words, larger ones as digits.
+ *
+ * The brief reads as a colleague speaking, and "3 material changes" in the
+ * middle of a sentence reads as a report. Past ten the word form starts
+ * costing more than it gives, so the digits come back.
+ */
+const NUMBER_WORDS = [
+  "no",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+];
+
+export function countInWords(count: number): string {
+  if (!Number.isFinite(count) || count < 0) {
+    return String(count);
+  }
+  return count <= 10 ? NUMBER_WORDS[count] : count.toLocaleString("en-US");
+}
+
+/** "1 source" / "2 sources", so callers stop hand-rolling the plural. */
+export function pluralize(count: number, singular: string, plural?: string): string {
+  return count === 1 ? singular : (plural ?? singular + "s");
+}

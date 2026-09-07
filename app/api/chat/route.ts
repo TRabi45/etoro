@@ -56,9 +56,48 @@ export const maxDuration = 180;
 /** Set on the browser once, then presented on every later turn of a session. */
 const OWNER_COOKIE = "ma_chat_owner";
 
+/**
+ * The screens the agent may be told it is looking at.
+ *
+ * An enum rather than a free string, because this value is interpolated into
+ * the system prompt. Everything below that reaches the prompt is validated by
+ * allow-list for the same reason: the panel sends its own UI state, but this
+ * route cannot distinguish the panel from a crafted request, and "the user is
+ * on the Targets screen" must never be able to carry a sentence of its own.
+ */
+const screenSchema = z.enum([
+  "Briefing",
+  "Targets",
+  "Market Map",
+  "Competitors",
+  "Monitoring",
+  "Company profile",
+]);
+
+/**
+ * Filter labels and values, constrained to characters a controlled vocabulary
+ * actually produces. No newlines, no punctuation that could open a quoted
+ * block - so an active filter cannot become an instruction.
+ */
+const safeFilterText = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z0-9 ._\-/&+%]+$/, "Filter text contains unsupported characters.");
+
 const pageContextSchema = z.object({
   selectedCompanySlug: z.string().min(1).nullable().optional(),
   selectedCompanyName: z.string().min(1).nullable().optional(),
+  screen: screenSchema.nullable().optional(),
+  activeFilters: z
+    .array(z.object({ label: safeFilterText, value: safeFilterText }))
+    .max(12)
+    .optional(),
+  /** Slugs the analyst has selected for comparison, if any. */
+  comparisonSlugs: z
+    .array(z.string().regex(/^[a-z0-9-]{1,80}$/))
+    .max(4)
+    .optional(),
 });
 
 /**
@@ -208,6 +247,19 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // Same treatment for the comparison set: slugs are checked against the
+  // database and the unknown ones are dropped, so a crafted request cannot
+  // invent companies for the agent to reason about.
+  let resolvedComparisonSlugs: string[] = [];
+  const requestedComparison = pageContext.comparisonSlugs ?? [];
+  if (requestedComparison.length > 0) {
+    const found = await client
+      .from("companies")
+      .select("slug")
+      .in("slug", requestedComparison);
+    resolvedComparisonSlugs = (found.data ?? []).map((row) => row.slug);
+  }
+
   let sessionId: string;
   let ownerToken: string;
   let history: AgentTurn[];
@@ -272,6 +324,12 @@ export async function POST(request: Request): Promise<Response> {
       context: {
         selectedCompanySlug,
         selectedCompanyName,
+        screen: pageContext.screen ?? null,
+        activeFilters: pageContext.activeFilters ?? [],
+        // Only slugs that resolved to a real company are forwarded, so the
+        // agent is never told the analyst is comparing something that does not
+        // exist.
+        comparisonSlugs: resolvedComparisonSlugs,
         currentDate: new Date().toISOString().slice(0, 10),
       },
       onError: async () => {
