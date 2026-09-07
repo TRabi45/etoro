@@ -125,7 +125,8 @@ export function CommandMenu({ targets, loadProblem }: CommandMenuProps) {
         kind: "target",
         label: target.canonicalName,
         hint:
-          [humanizeToken(target.themeTags[0]), target.hqCountry].filter(Boolean).join(" · ") || null,
+          [humanizeToken(target.themeTags[0]), target.hqCountry].filter(Boolean).join(" · ") ||
+          null,
         href: `/companies/${target.slug}`,
         icon: "targets",
         target,

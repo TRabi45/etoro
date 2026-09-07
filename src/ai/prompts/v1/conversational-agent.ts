@@ -62,7 +62,9 @@ export function buildConversationalAgentPrompt(context: ConversationalAgentConte
     filters.length > 0
       ? `The list in front of them is filtered by: ${filters
           .map((filter) => `${filter.label} = ${filter.value}`)
-          .join("; ")}. When the user says "these", "the list" or "all of them", they mean the filtered set. If your answer ranges wider than the filter, say so explicitly.`
+          .join(
+            "; ",
+          )}. When the user says "these", "the list" or "all of them", they mean the filtered set. If your answer ranges wider than the filter, say so explicitly.`
       : `No filters are applied to the list in front of them.`;
 
   const comparison = context.comparisonSlugs ?? [];

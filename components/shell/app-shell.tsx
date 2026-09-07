@@ -223,7 +223,11 @@ export function AppShell({
           full height including the top bar. */}
       {agentOpen && agentIsDrawer ? (
         <div className="fixed inset-0 z-50 wide:hidden">
-          <div className="absolute inset-0 bg-primary/25" onClick={toggleAgent} aria-hidden="true" />
+          <div
+            className="absolute inset-0 bg-primary/25"
+            onClick={toggleAgent}
+            aria-hidden="true"
+          />
           <div className="absolute inset-y-0 right-0 flex w-full max-w-[var(--agent-width)] flex-col bg-surface shadow-[var(--shadow-drawer)]">
             <Suspense fallback={<AgentPanelFallback />}>
               <AgentPanel targets={targets} onClose={toggleAgent} presentation="drawer" />

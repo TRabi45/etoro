@@ -57,7 +57,11 @@ const CONFIDENCE_TONE: Record<string, BadgeTone> = {
 export function EvidenceTab({ profile }: { profile: CompanyProfileView }) {
   const { evidence, sources } = profile;
 
-  if (evidence.facts.length === 0 && evidence.contradictions.length === 0 && evidence.unknowns.length === 0) {
+  if (
+    evidence.facts.length === 0 &&
+    evidence.contradictions.length === 0 &&
+    evidence.unknowns.length === 0
+  ) {
     return (
       <EmptyState
         icon="quote"

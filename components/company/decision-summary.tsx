@@ -134,7 +134,10 @@ export function DecisionSummary({ profile }: { profile: CompanyProfileView }) {
               Best route:{" "}
               <span className="font-medium text-primary">{humanizeToken(score.bestRoute)}</span>
               {score.secondBestRoute ? (
-                <span className="text-tertiary"> (then {humanizeToken(score.secondBestRoute)})</span>
+                <span className="text-tertiary">
+                  {" "}
+                  (then {humanizeToken(score.secondBestRoute)})
+                </span>
               ) : null}
             </span>
           ) : null}

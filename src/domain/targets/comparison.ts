@@ -79,9 +79,7 @@ function textRow(
     label,
     cells: subjects.map((subject) => {
       const text = read(subject);
-      return text === null
-        ? unknown("Not recorded for this company.")
-        : value(text);
+      return text === null ? unknown("Not recorded for this company.") : value(text);
     }),
     warning: null,
   };
@@ -182,13 +180,28 @@ export function buildComparison(subjects: readonly ComparisonSubject[]): Compari
   ];
 
   const thesis: ComparisonRow[] = [
-    textRow("thesis", "Acquisition thesis", subjects, (s) => s.profile.assessment?.strategicFitSummary ?? null),
-    textRow("gap", "Gap closed for eToro", subjects, (s) => s.profile.assessment?.gapClosed ?? null),
+    textRow(
+      "thesis",
+      "Acquisition thesis",
+      subjects,
+      (s) => s.profile.assessment?.strategicFitSummary ?? null,
+    ),
+    textRow(
+      "gap",
+      "Gap closed for eToro",
+      subjects,
+      (s) => s.profile.assessment?.gapClosed ?? null,
+    ),
     textRow("why_now", "Why now", subjects, (s) => s.profile.assessment?.whyNow ?? null),
     // Never dropped to make a comparison tidier. A target with no recorded
     // counter-thesis is a target nobody has argued against yet, which is a
     // weaker position than one that survived the argument.
-    textRow("counter", "Strongest counter-thesis", subjects, (s) => s.profile.assessment?.counterThesis ?? null),
+    textRow(
+      "counter",
+      "Strongest counter-thesis",
+      subjects,
+      (s) => s.profile.assessment?.counterThesis ?? null,
+    ),
     textRow("risks", "Risks", subjects, (s) => s.profile.assessment?.risks ?? null),
   ];
 
@@ -224,14 +237,32 @@ export function buildComparison(subjects: readonly ComparisonSubject[]): Compari
   ];
 
   const fundamentals: ComparisonRow[] = [
-    textRow("archetype", "Fundamentals archetype", subjects, (s) =>
-      s.profile.fundamentals?.archetype.replace(/_/g, " ") ?? null,
+    textRow(
+      "archetype",
+      "Fundamentals archetype",
+      subjects,
+      (s) => s.profile.fundamentals?.archetype.replace(/_/g, " ") ?? null,
     ),
-    textRow("revenue_quality", "Revenue quality", subjects, (s) => s.profile.fundamentals?.revenueQuality ?? null),
+    textRow(
+      "revenue_quality",
+      "Revenue quality",
+      subjects,
+      (s) => s.profile.fundamentals?.revenueQuality ?? null,
+    ),
     textRow("growth", "Growth", subjects, (s) => s.profile.fundamentals?.growthAssessment ?? null),
     textRow("margin", "Margin", subjects, (s) => s.profile.fundamentals?.marginAssessment ?? null),
-    textRow("runway", "Burn and runway", subjects, (s) => s.profile.fundamentals?.burnRunway ?? null),
-    textRow("concentration", "Concentration", subjects, (s) => s.profile.fundamentals?.concentration ?? null),
+    textRow(
+      "runway",
+      "Burn and runway",
+      subjects,
+      (s) => s.profile.fundamentals?.burnRunway ?? null,
+    ),
+    textRow(
+      "concentration",
+      "Concentration",
+      subjects,
+      (s) => s.profile.fundamentals?.concentration ?? null,
+    ),
   ];
 
   return [
@@ -252,8 +283,6 @@ export function buildComparison(subjects: readonly ComparisonSubject[]): Compari
  */
 export function collectComparisonWarnings(sections: readonly ComparisonSection[]): string[] {
   return sections.flatMap((section) =>
-    section.rows
-      .filter((row) => row.warning !== null)
-      .map((row) => `${row.label}: ${row.warning}`),
+    section.rows.filter((row) => row.warning !== null).map((row) => `${row.label}: ${row.warning}`),
   );
 }

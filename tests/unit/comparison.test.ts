@@ -55,7 +55,12 @@ function profile(overrides: Partial<CompanyProfileView> = {}): CompanyProfileVie
     fundamentals: null,
     assessment: null,
     score: null,
-    evidence: { facts: [], contradictions: [], unknowns: [], freshness: { lastUpdatedAt: null, staleFields: [] } },
+    evidence: {
+      facts: [],
+      contradictions: [],
+      unknowns: [],
+      freshness: { lastUpdatedAt: null, staleFields: [] },
+    },
     sources: [],
     hasResearch: true,
     ...overrides,

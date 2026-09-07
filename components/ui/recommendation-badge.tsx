@@ -71,7 +71,8 @@ const PRESENTATION: Record<RecommendationState, Presentation> = {
     label: "Do not advance",
     tone: "muted",
     icon: "minus",
-    definition: "Scores below the conditional-watchlist floor. Not a fit for eToro on current evidence.",
+    definition:
+      "Scores below the conditional-watchlist floor. Not a fit for eToro on current evidence.",
   },
   blocked: {
     label: "Blocked",

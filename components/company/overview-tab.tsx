@@ -114,7 +114,10 @@ export function OverviewTab({ profile }: { profile: CompanyProfileView }) {
           </Field>
 
           <Field label="Record origin">
-            <Badge tone="muted" title="Whether this row is seed identity or something the pipeline produced.">
+            <Badge
+              tone="muted"
+              title="Whether this row is seed identity or something the pipeline produced."
+            >
               {humanizeToken(company.recordOrigin)}
             </Badge>
           </Field>
@@ -145,13 +148,20 @@ export function OverviewTab({ profile }: { profile: CompanyProfileView }) {
 
           <dl className="mt-3 flex flex-col gap-3">
             {[
-              { key: "revenue_quality", label: "Revenue quality", value: fundamentals.revenueQuality },
+              {
+                key: "revenue_quality",
+                label: "Revenue quality",
+                value: fundamentals.revenueQuality,
+              },
               { key: "growth_assessment", label: "Growth", value: fundamentals.growthAssessment },
               { key: "margin_assessment", label: "Margin", value: fundamentals.marginAssessment },
               { key: "burn_runway", label: "Burn and runway", value: fundamentals.burnRunway },
               { key: "concentration", label: "Concentration", value: fundamentals.concentration },
             ].map((field) => (
-              <div key={field.key} className="rounded-card border border-border bg-surface px-4 py-3">
+              <div
+                key={field.key}
+                className="rounded-card border border-border bg-surface px-4 py-3"
+              >
                 <dt className="text-caption font-semibold tracking-wide text-secondary uppercase">
                   {field.label}
                 </dt>
@@ -213,7 +223,10 @@ export function OverviewTab({ profile }: { profile: CompanyProfileView }) {
               <tbody>
                 {metrics.map((metric) => (
                   <tr key={metric.id} className="border-b border-border last:border-b-0">
-                    <th scope="row" className="px-4 py-2.5 text-left font-medium text-primary capitalize">
+                    <th
+                      scope="row"
+                      className="px-4 py-2.5 text-left font-medium text-primary capitalize"
+                    >
                       {metric.metricType.replace(/_/g, " ")}
                     </th>
                     <td className="px-3 py-2.5">

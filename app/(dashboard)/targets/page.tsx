@@ -1,6 +1,10 @@
 import { connection } from "next/server";
 import { searchTargets } from "@/src/db/repositories/targets";
-import { applyTargetQuery, hasActiveFilters, parseTargetQuery } from "@/src/domain/targets/target-filters";
+import {
+  applyTargetQuery,
+  hasActiveFilters,
+  parseTargetQuery,
+} from "@/src/domain/targets/target-filters";
 import { FilterBar } from "@/components/targets/filter-bar";
 import { TargetTable } from "@/components/targets/target-table";
 import { CompareTray } from "@/components/targets/compare-tray";
@@ -38,8 +42,8 @@ export default async function TargetsPage(props: PageProps<"/targets">) {
             impact={
               <>
                 No part of the list is shown, rather than a partial one, so this page never implies
-                the universe is smaller than it is. Filters and comparisons are unavailable until the
-                database is reachable.
+                the universe is smaller than it is. Filters and comparisons are unavailable until
+                the database is reachable.
               </>
             }
             detail={result.problem.message}

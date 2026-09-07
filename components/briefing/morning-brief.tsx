@@ -51,8 +51,9 @@ export function MorningBrief({ brief }: { brief: MorningBriefData }) {
             </strong>
             {newTargets.length > 0 ? (
               <>
-                . {countInWords(newTargets.length)} {pluralize(newTargets.length, "company", "companies")} in
-                the universe {newTargets.length === 1 ? "has" : "have"} no assessment yet
+                . {countInWords(newTargets.length)}{" "}
+                {pluralize(newTargets.length, "company", "companies")} in the universe{" "}
+                {newTargets.length === 1 ? "has" : "have"} no assessment yet
               </>
             ) : null}
             .

@@ -41,9 +41,7 @@ export function AttentionRow({ item }: { item: AttentionItem }) {
           {presentation.label}
         </Badge>
         {item.target ? <RecommendationBadge recommendation={item.target.recommendation} /> : null}
-        {relative ? (
-          <span className="tabular text-caption text-tertiary">{relative}</span>
-        ) : null}
+        {relative ? <span className="tabular text-caption text-tertiary">{relative}</span> : null}
         {item.event && !eventDate ? (
           <span
             className="text-caption text-tertiary"

@@ -132,7 +132,11 @@ export default async function CompetitorsPage() {
                         "Deal status",
                         "Date",
                       ].map((heading) => (
-                        <th key={heading} scope="col" className="px-4 py-2.5 font-medium text-secondary">
+                        <th
+                          key={heading}
+                          scope="col"
+                          className="px-4 py-2.5 font-medium text-secondary"
+                        >
                           {heading}
                         </th>
                       ))}
@@ -217,7 +221,10 @@ export default async function CompetitorsPage() {
 }
 
 function DealRow({ deal }: { deal: DealSummary }) {
-  const presentation = STATUS_PRESENTATION[deal.status] ?? { tone: "neutral" as BadgeTone, hint: "" };
+  const presentation = STATUS_PRESENTATION[deal.status] ?? {
+    tone: "neutral" as BadgeTone,
+    hint: "",
+  };
   const date = effectiveDealDate(deal);
 
   return (

@@ -138,10 +138,7 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
   }
 
   return (
-    <section
-      aria-label="M&amp;A Intelligence"
-      className="flex h-full min-h-0 flex-col bg-surface"
-    >
+    <section aria-label="M&amp;A Intelligence" className="flex h-full min-h-0 flex-col bg-surface">
       <header className="flex shrink-0 items-start gap-2.5 border-b border-border px-4 py-3">
         {/* An abstract aperture, not a face. The dot is a status indicator and
             is paired with text, never used as the only signal. */}
@@ -174,9 +171,7 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {messages.length === 0 ? (
-          <AgentOpening context={context} onAsk={submit} />
-        ) : null}
+        {messages.length === 0 ? <AgentOpening context={context} onAsk={submit} /> : null}
 
         <div className="flex flex-col gap-4">
           {messages.map((message) => {
@@ -237,7 +232,10 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
         </div>
 
         {busy ? (
-          <p className="mt-3 flex items-center gap-2 text-caption text-secondary" aria-live="polite">
+          <p
+            className="mt-3 flex items-center gap-2 text-caption text-secondary"
+            aria-live="polite"
+          >
             <Icon name="refresh" size={14} className="animate-spin" />
             Checking the record
           </p>
@@ -281,7 +279,12 @@ export function AgentPanel({ targets, onClose, presentation }: AgentPanelProps) 
             Stop
           </Button>
         ) : (
-          <Button variant="primary" type="submit" disabled={input.trim() === ""} icon="arrow-up-right">
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={input.trim() === ""}
+            icon="arrow-up-right"
+          >
             Ask
           </Button>
         )}

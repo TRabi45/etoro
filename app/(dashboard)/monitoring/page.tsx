@@ -262,7 +262,9 @@ export default async function MonitoringPage() {
           ].map((entry) => (
             <div key={entry.term}>
               <dt className="text-body font-medium text-primary">{entry.term}</dt>
-              <dd className="mt-0.5 text-body leading-relaxed text-secondary">{entry.definition}</dd>
+              <dd className="mt-0.5 text-body leading-relaxed text-secondary">
+                {entry.definition}
+              </dd>
             </div>
           ))}
         </dl>

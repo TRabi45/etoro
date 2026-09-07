@@ -674,6 +674,50 @@ Build Milestone 6 — the intelligence dashboard: Top 25, the full explorer, fil
 
 ---
 
+## Milestone 16 — UI/UX Rebuild Against the Product Specification
+
+### AI and tools used
+
+Claude Code on Claude Opus 5, working from `UI_UX_PRODUCT_SPEC.md` and following its Section 10 sequence: read the architecture and strategy documents, inspect the repository, build tokens and shared components before styling any page, then the shell, Briefing and agent panel, then Targets and one complete Company Profile, then the remaining screens and every required state.
+
+No data, repository or pipeline code was rewritten. The changes to `src/` were additive and driven by what the UI could not honestly render without them.
+
+### What the environment cost before any code was written
+
+The working copy was missing 123 tracked files — every source directory. Local `main` matched `origin/main` exactly, so nothing was lost, but `node_modules` was empty and Node.js was not installed at all. Docker Desktop existed but its Linux engine returned 500 on every call; the root cause was upstream of Docker, in firmware: `wsl --status` reported virtualization disabled, so WSL2 could not start and the local Supabase could not run.
+
+That was reported rather than worked around. Once virtualization was enabled and the machine restarted, `supabase start` applied all 13 migrations, the bootstrap seed wrote six companies, and the vertical slice produced a real scored profile — getquin at 81.18 with 85% coverage, a 69-84 range and a Partner recommendation with buy ranked second. Every screen was then verified against those rows rather than against fixtures.
+
+An early lesson worth recording: `sed` in this environment consumed backticks inside a single-quoted script as command substitution and silently corrupted a doc comment. Structured edits moved to Python after that.
+
+### Decisions where the specification and the product disagreed
+
+Three places needed a judgement rather than transcription.
+
+**The layout spec contradicted itself between 1200 and 1343px.** It asks for the agent to stay an inline column above 1200px and for the main content to keep at least 720px. A 224px rail plus a 400px panel needs 1344px to leave that much; at 1280px the main column measured 656px. The rail now auto-collapses to icons in that band — navigation losing its labels is recoverable, a target table losing columns is not.
+
+**Two of the suggested design tokens failed WCAG AA.** Measured rather than eyeballed: `--text-tertiary` at #7b847c is 3.86:1 on white and 3.59:1 on the canvas, and it carries dates, "Undated" and "Not recorded" — the honest gaps a reader must not miss. It was darkened to #6b736c. Control borders at 1.58:1 failed 1.4.11, which requires 3:1 for the boundary that identifies a control; a separate `--border-control` token now covers inputs, selects and buttons while decorative rules keep the lighter weight. The specification's own instruction not to put white text on brand green was confirmed by measurement at 2.29:1.
+
+**Two responsive defects were found only by resizing.** Between 768 and 899px navigation was unreachable — the rail becomes a column at 900px but the hamburger was hidden from 768px, so neither existed. And search was hidden below 640px, though the responsive priority requires search, citations and agent access to survive at every width.
+
+### What the UI needed from the data layer, and what it was refused
+
+`searchTargets` grew thesis, why-now, last-researched, next-refresh and research-state fields, all read from joins already being made. `getScoreHistory` and a deals reader were added for the Activity timeline and the Competitors screen. A company refresh endpoint was added behind the same operator auth and rate limit as the monitoring trigger.
+
+The refusals mattered more. The Competitors screen has a "Relevance to eToro" column and the `deals` table has a `rationale` field, and it would have been trivial to render one as the other. They are different claims — what an acquirer says it bought, and what that means for us — so the column reads "Not assessed" instead. The same applies to the profile's next diligence question, which is drawn from recorded unknowns rather than generated: a plausible-sounding invented question is exactly the confident filler the rest of the system is built to avoid.
+
+### Corrections the tooling forced
+
+React 19's `react-hooks/set-state-in-effect` rejected five components that read a client-only value with `useState` plus an effect. Rather than suppressing it, those moved to `useSyncExternalStore` behind one `useClientValue` hook, and the shell's route-change reset moved to React's adjust-during-render pattern. The lint rule was right: each of those was a second render pass that did not need to happen.
+
+Twenty-two new unit tests were written for the parts where a mistake would be invisible — a filter silently dropping unscored companies, a coverage band treating "no score" as "low coverage", a comparison table putting two different measurement periods side by side without a warning. The suite went from 228 to 250, all passing, with lint and typecheck clean.
+
+### What is still unverified
+
+The agent panel's conversational path was not exercised end to end, because that needs a live `ANTHROPIC_API_KEY` and spends real tokens. Its context plumbing was verified — the panel correctly reports the current screen, the selected company and the active filters — but no reply was generated during this milestone. The `Run intelligence` and `Refresh` controls were built and their permission, rate-limit and partial-failure states are reachable, but no successful live run was performed from the UI.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:

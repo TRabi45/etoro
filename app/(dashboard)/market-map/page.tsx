@@ -40,7 +40,8 @@ export default async function MarketMapPage(props: PageProps<"/market-map">) {
           impact={
             <>
               The map is derived from the target universe, which could not be read. Nothing is shown
-              rather than an empty grid, because an empty grid reads as &ldquo;no coverage anywhere&rdquo;.
+              rather than an empty grid, because an empty grid reads as &ldquo;no coverage
+              anywhere&rdquo;.
             </>
           }
           detail={result.problem.message}
@@ -89,7 +90,10 @@ export default async function MarketMapPage(props: PageProps<"/market-map">) {
             </caption>
             <thead>
               <tr className="border-b border-border text-left">
-                <th scope="col" className="sticky left-0 bg-surface px-4 py-2.5 font-medium text-secondary">
+                <th
+                  scope="col"
+                  className="sticky left-0 bg-surface px-4 py-2.5 font-medium text-secondary"
+                >
                   Theme
                 </th>
                 {matrix.columns.map((column) => (

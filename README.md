@@ -65,24 +65,29 @@ A TypeScript modular monolith. One codebase, one relational database, one shared
 research pipeline used by both scheduled and manual runs. No microservices, no
 multi-agent orchestration, no vector database.
 
-| Layer                  | Location                         | Responsibility                                                                                     |
-| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Dashboard              | `app/`, `components/`            | Server-rendered views. Never queries the database directly, never calls a provider SDK.            |
-| Repositories           | `src/db/repositories/`           | The only path to persistence. Returns typed results, including typed failures.                     |
-| Database clients       | `src/db/client.ts`               | Public read-only client and server-only service client.                                            |
-| Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                                     |
-| Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                           |
-| Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.                         |
-| Pipeline               | `src/research/pipeline/`         | The monitoring loop and `researchCompany`, the one orchestrator every trigger shares.              |
-| Tiering policy         | `src/domain/tiering/`            | Deterministic research-tier and next-refresh decisions over validated facts.                       |
-| Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.                    |
-| Stub payload           | `data/stub/`                     | Synthetic stand-in kept only for `getquin`'s original slice. Labelled as stub wherever it renders. |
-| AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.                       |
-| Server utilities       | `src/server/`                    | Transport concerns that are not repositories - endpoint rate limiting and operator authorization.  |
-| Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                                          |
-| Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                                        |
-| Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                                      |
-| Gold benchmark         | `tests/evaluation/gold/`         | Evaluation fixtures. Production modules cannot import these.                                       |
+| Layer                  | Location                         | Responsibility                                                                                                             |
+| ---------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard              | `app/`, `components/`            | Server-rendered views. Never queries the database directly, never calls a provider SDK.                                    |
+| Design tokens          | `app/globals.css`                | The only place a colour, type step, radius or shell measurement is defined. Components use semantic names, never literals. |
+| Shared UI              | `components/ui/`                 | Primitives: badges, score and coverage display, absence states, buttons, skeletons, formatting.                            |
+| Application shell      | `components/shell/`              | Rail, top bar, command menu and the bounded run control. Owns the responsive layout.                                       |
+| Agent surface          | `components/agent/`              | The contextual panel and the URL-derived page context it sends with every turn.                                            |
+| List query model       | `src/domain/targets/`            | Pure, tested filtering, sorting, comparison alignment and market-map aggregation.                                          |
+| Repositories           | `src/db/repositories/`           | The only path to persistence. Returns typed results, including typed failures.                                             |
+| Database clients       | `src/db/client.ts`               | Public read-only client and server-only service client.                                                                    |
+| Domain logic           | `src/domain/scoring/`            | Pure deterministic scoring engine and canonical input hashing.                                                             |
+| Business configuration | `src/config/`                    | Controlled taxonomy and versioned scoring weights, gates and thresholds.                                                   |
+| Runtime validation     | `src/validation/`                | Zod schemas at every I/O boundary; TypeScript types are derived from them.                                                 |
+| Pipeline               | `src/research/pipeline/`         | The monitoring loop and `researchCompany`, the one orchestrator every trigger shares.                                      |
+| Tiering policy         | `src/domain/tiering/`            | Deterministic research-tier and next-refresh decisions over validated facts.                                               |
+| Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.                                            |
+| Stub payload           | `data/stub/`                     | Synthetic stand-in kept only for `getquin`'s original slice. Labelled as stub wherever it renders.                         |
+| AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.                                               |
+| Server utilities       | `src/server/`                    | Transport concerns that are not repositories - endpoint rate limiting and operator authorization.                          |
+| Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                                                                  |
+| Tests                  | `tests/unit/`, `tests/fixtures/` | Pure unit tests, runnable with no database.                                                                                |
+| Integration tests      | `tests/integration/`             | Need a live local database; excluded from CI.                                                                              |
+| Gold benchmark         | `tests/evaluation/gold/`         | Evaluation fixtures. Production modules cannot import these.                                                               |
 
 ### Enforced boundaries
 
@@ -95,6 +100,39 @@ multi-agent orchestration, no vector database.
 - Scoring configuration rows lock themselves the first time a score is written
   against them, so a stored score always reconciles with the weights that
   produced it.
+
+## The interface
+
+Five destinations, built to the UI/UX product specification. The design rule
+running through all of them is that the product never looks more certain than
+its evidence: a gap renders as a named gap, a score never appears without its
+coverage, and an empty screen says whether it is empty because nothing was
+found or because nothing was looked for.
+
+| Screen          | Route               | What it answers                                                                                           |
+| --------------- | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Briefing        | `/`                 | What changed, what needs attention, which targets rank highest, and whether the pipeline is healthy.      |
+| Targets         | `/targets`          | The ranked universe, with saved views, filters, sorting and 2-4 way comparison. Filters live in the URL.  |
+| Company profile | `/companies/[slug]` | The decision first, then Overview, Score, Evidence and Activity. Citations open a source drawer in place. |
+| Market Map      | `/market-map`       | Coverage by theme against geography, target path or pipeline status - and where the gaps are.             |
+| Competitors     | `/competitors`      | What competitors bought, what it gained them, and how far each transaction actually got.                  |
+| Monitoring      | `/monitoring`       | Run health, watchlist review status, events found, and a glossary of the product's own vocabulary.        |
+
+The agent is a persistent right-hand panel rather than a chat bubble. It reads
+the current screen, the selected company, the active filters and the comparison
+set out of the URL, so what it is told matches what the analyst can see. Below
+1200px it becomes a drawer; below 900px so does the navigation rail.
+
+Design tokens live only in `app/globals.css`. No component hard-codes a brand or
+status colour, and status is never carried by colour alone - every badge has a
+text label. The palette is verified against WCAG AA, including the deliberate
+absence of white text on brand green, which measures 2.29:1.
+
+**The eToro wordmark is a placeholder.** The repository holds no licensed copy of
+the 2026 brand asset, and the brand direction forbids redrawing it from memory,
+so `components/ui/wordmark.tsx` renders plain text and carries a replacement
+note. Dropping the official SVG into `public/brand/` and editing that one file is
+the whole change.
 
 ## Prerequisites
 
@@ -121,15 +159,15 @@ development values, not secrets, but `.env.local` is gitignored regardless - onl
 
 ## Environment variables
 
-| Variable                        | Where it is used   | Notes                                                                                                                                                                                                             |
-| ------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | Browser and server | Project URL. Local default `http://127.0.0.1:54321`.                                                                                                                                                              |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server | Restricted by row-level security to reading the public dashboard tables.                                                                                                                                          |
-| `SUPABASE_SERVICE_ROLE_KEY`     | Server only        | Bypasses row-level security. The only credential that may write. Never prefix it `NEXT_PUBLIC_`.                                                                                                                  |
-| `ANTHROPIC_API_KEY`             | Server only        | From <https://console.anthropic.com>. Required for chat; everything else runs without it.                                                                                                                         |
-| `ANTHROPIC_MODEL`               | Server only        | For example `claude-sonnet-5`. Configuration, never a literal in code.                                                                                                                                            |
-| `MA_OPERATOR_SECRET`            | Server only        | Required to call `POST /api/monitor/run`. Sent as the `x-ma-operator-secret` header. Unset means the endpoint refuses every request with 503 rather than running expensive work anonymously.                      |
-| `SEARCH_PROVIDER_API_KEY`       | Server only        | Optional. Configuration for a future search adapter; **no vendor is wired up**, so setting it does not enable search - the source plan says so explicitly in its warnings rather than quietly narrowing coverage. |
+| Variable                        | Where it is used   | Notes                                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Browser and server | Project URL. Local default `http://127.0.0.1:54321`.                                                                                                                                                                                                                                                   |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser and server | Restricted by row-level security to reading the public dashboard tables.                                                                                                                                                                                                                               |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server only        | Bypasses row-level security. The only credential that may write. Never prefix it `NEXT_PUBLIC_`.                                                                                                                                                                                                       |
+| `ANTHROPIC_API_KEY`             | Server only        | From <https://console.anthropic.com>. Required for chat; everything else runs without it.                                                                                                                                                                                                              |
+| `ANTHROPIC_MODEL`               | Server only        | For example `claude-sonnet-5`. Configuration, never a literal in code.                                                                                                                                                                                                                                 |
+| `MA_OPERATOR_SECRET`            | Server only        | Required to call `POST /api/monitor/run` and `POST /api/companies/[slug]/refresh`. Sent as the `x-ma-operator-secret` header. Unset means both endpoints refuse every request with 503 rather than running expensive work anonymously; the UI reports this as a permission state rather than an error. |
+| `SEARCH_PROVIDER_API_KEY`       | Server only        | Optional. Configuration for a future search adapter; **no vendor is wired up**, so setting it does not enable search - the source plan says so explicitly in its warnings rather than quietly narrowing coverage.                                                                                      |
 
 The model is an environment variable rather than a constant so that swapping it -
 for cost, latency or capability - never means editing application logic, and so

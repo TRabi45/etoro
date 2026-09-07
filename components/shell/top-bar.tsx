@@ -124,13 +124,7 @@ export function TopBar({
   );
 }
 
-function LastUpdated({
-  at,
-  status,
-}: {
-  at: string | null;
-  status: TopBarProps["lastRunStatus"];
-}) {
+function LastUpdated({ at, status }: { at: string | null; status: TopBarProps["lastRunStatus"] }) {
   if (!at) {
     return (
       <span

@@ -253,10 +253,7 @@ export async function POST(request: Request): Promise<Response> {
   let resolvedComparisonSlugs: string[] = [];
   const requestedComparison = pageContext.comparisonSlugs ?? [];
   if (requestedComparison.length > 0) {
-    const found = await client
-      .from("companies")
-      .select("slug")
-      .in("slug", requestedComparison);
+    const found = await client.from("companies").select("slug").in("slug", requestedComparison);
     resolvedComparisonSlugs = (found.data ?? []).map((row) => row.slug);
   }
 

@@ -175,9 +175,7 @@ function EventEntry({ event }: { event: EventSummary }) {
         ) : (
           <Badge tone="muted">Materiality unrated</Badge>
         )}
-        <span className="tabular text-caption text-tertiary">
-          {formatDate(date) ?? "Undated"}
-        </span>
+        <span className="tabular text-caption text-tertiary">{formatDate(date) ?? "Undated"}</span>
       </div>
 
       <p className="mt-1.5 text-body leading-relaxed text-primary">{event.summary}</p>

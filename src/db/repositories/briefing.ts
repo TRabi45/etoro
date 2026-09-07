@@ -32,10 +32,7 @@ const TOP_OPPORTUNITY_COUNT = 5;
 const NEEDS_ATTENTION_COUNT = 3;
 
 export type AttentionReason =
-  | "blocked_gate"
-  | "material_event"
-  | "thin_evidence"
-  | "priority_ready";
+  "blocked_gate" | "material_event" | "thin_evidence" | "priority_ready";
 
 export interface AttentionItem {
   reason: AttentionReason;

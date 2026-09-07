@@ -31,7 +31,10 @@ export function TargetCell({ target }: { target: TargetSummary }) {
           {target.canonicalName}
         </span>
         {target.legalEntityName ? (
-          <span className="block truncate text-caption text-tertiary" title={target.legalEntityName}>
+          <span
+            className="block truncate text-caption text-tertiary"
+            title={target.legalEntityName}
+          >
             {target.legalEntityName}
           </span>
         ) : (

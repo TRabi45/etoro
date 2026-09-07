@@ -141,9 +141,9 @@ describe("applyTargetQuery", () => {
     const solid = target({ slug: "solid", hasResearch: true, coverage: 0.9, normalizedScore: 85 });
     const all = [untouched, thin, solid];
 
-    expect(applyTargetQuery(all, parseTargetQuery({ view: "new" }), NOW).map((r) => r.slug)).toEqual(
-      ["untouched"],
-    );
+    expect(
+      applyTargetQuery(all, parseTargetQuery({ view: "new" }), NOW).map((r) => r.slug),
+    ).toEqual(["untouched"]);
     expect(
       applyTargetQuery(all, parseTargetQuery({ view: "needs_research" }), NOW).map((r) => r.slug),
     ).toEqual(["thin"]);
@@ -156,9 +156,9 @@ describe("applyTargetQuery", () => {
       target({ slug: "c", canonicalName: "Gamma", thesis: "Closes the custody gap" }),
     ];
 
-    expect(applyTargetQuery(rows, parseTargetQuery({ q: "gmbh" }), NOW).map((r) => r.slug)).toEqual([
-      "a",
-    ]);
+    expect(applyTargetQuery(rows, parseTargetQuery({ q: "gmbh" }), NOW).map((r) => r.slug)).toEqual(
+      ["a"],
+    );
     expect(
       applyTargetQuery(rows, parseTargetQuery({ q: "germany" }), NOW).map((r) => r.slug),
     ).toEqual(["b"]);

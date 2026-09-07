@@ -51,8 +51,7 @@ export function readAgentContext({
 }): AgentContext {
   const onProfile = pathname.startsWith("/companies/");
   const companySlug = onProfile ? (pathname.split("/")[2] ?? null) : null;
-  const companyName =
-    targets.find((target) => target.slug === companySlug)?.canonicalName ?? null;
+  const companyName = targets.find((target) => target.slug === companySlug)?.canonicalName ?? null;
 
   const filters = Object.entries(FILTER_PARAM_LABELS)
     .map(([param, label]) => {

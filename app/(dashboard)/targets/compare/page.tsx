@@ -47,8 +47,8 @@ export default async function ComparePage(props: PageProps<"/targets/compare">) 
           title="Select at least two companies"
           nextStep={
             <>
-              A comparison needs {MIN_COMPARISON} to {MAX_COMPARISON} companies. Choose them with the
-              checkboxes on the target list.
+              A comparison needs {MIN_COMPARISON} to {MAX_COMPARISON} companies. Choose them with
+              the checkboxes on the target list.
             </>
           }
           action={
@@ -119,11 +119,7 @@ export default async function ComparePage(props: PageProps<"/targets/compare">) 
             title="Some selections are missing from this comparison"
             impact={
               <>
-                {notFound.length > 0 ? (
-                  <>
-                    No company exists for {notFound.join(", ")}.{" "}
-                  </>
-                ) : null}
+                {notFound.length > 0 ? <>No company exists for {notFound.join(", ")}. </> : null}
                 {failures.length > 0 ? <>Some profiles could not be read. </> : null}
                 The columns below are complete for the companies that did load.
               </>
@@ -133,7 +129,10 @@ export default async function ComparePage(props: PageProps<"/targets/compare">) 
         ) : null}
 
         {warnings.length > 0 ? (
-          <Notice tone="warning" title={`${warnings.length} field${warnings.length === 1 ? "" : "s"} cannot be read straight across`}>
+          <Notice
+            tone="warning"
+            title={`${warnings.length} field${warnings.length === 1 ? "" : "s"} cannot be read straight across`}
+          >
             <ul className="mt-1 flex list-disc flex-col gap-1 pl-4">
               {warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
@@ -162,7 +161,9 @@ export default async function ComparePage(props: PageProps<"/targets/compare">) 
               </p>
 
               <div className="mt-3">
-                <RecommendationBadge recommendation={subject.profile.score?.recommendation ?? null} />
+                <RecommendationBadge
+                  recommendation={subject.profile.score?.recommendation ?? null}
+                />
               </div>
 
               <div className="mt-3">
@@ -213,7 +214,10 @@ export default async function ComparePage(props: PageProps<"/targets/compare">) 
                   </thead>
                   <tbody>
                     {section.rows.map((row) => (
-                      <tr key={row.key} className="border-b border-border last:border-b-0 align-top">
+                      <tr
+                        key={row.key}
+                        className="border-b border-border last:border-b-0 align-top"
+                      >
                         <th
                           scope="row"
                           className="px-4 py-3 text-left font-medium text-primary capitalize"

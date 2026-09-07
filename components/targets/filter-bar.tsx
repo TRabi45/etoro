@@ -215,8 +215,7 @@ export function FilterBar({ query, countries, matchCount, totalCount }: FilterBa
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-caption text-secondary" aria-live="polite">
           <span className="tabular font-medium text-primary">{matchCount}</span> of{" "}
-          <span className="tabular">{totalCount}</span>{" "}
-          {totalCount === 1 ? "company" : "companies"}
+          <span className="tabular">{totalCount}</span> {totalCount === 1 ? "company" : "companies"}
           {hasActiveFilters(query) ? " match the active filters" : " in the universe"}
         </p>
 

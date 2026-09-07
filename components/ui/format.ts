@@ -69,7 +69,10 @@ export function ageInDays(iso: string | null | undefined, now: Date = new Date()
  * decision the reader is making only needs the order of magnitude. A future
  * date reads as "scheduled", which is what `next_refresh_at` actually is.
  */
-export function formatRelative(iso: string | null | undefined, now: Date = new Date()): string | null {
+export function formatRelative(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
   const days = ageInDays(iso, now);
   if (days === null) {
     return null;

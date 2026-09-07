@@ -54,7 +54,17 @@ export function useTargetQuery() {
   /** Clears every filter but keeps the comparison set and the sort order. */
   const clearFilters = useCallback(() => {
     const next = new URLSearchParams(searchParams.toString());
-    for (const key of ["q", "view", "recommendation", "category", "country", "path", "minScore", "coverage", "freshness"]) {
+    for (const key of [
+      "q",
+      "view",
+      "recommendation",
+      "category",
+      "country",
+      "path",
+      "minScore",
+      "coverage",
+      "freshness",
+    ]) {
       next.delete(key);
     }
     commit(next);

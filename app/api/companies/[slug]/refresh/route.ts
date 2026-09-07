@@ -27,7 +27,10 @@ function jsonError(status: number, code: string, message: string, headers?: Head
   return Response.json({ error: { code, message } }, { status, headers });
 }
 
-export async function POST(request: Request, context: RouteContext<"/api/companies/[slug]/refresh">) {
+export async function POST(
+  request: Request,
+  context: RouteContext<"/api/companies/[slug]/refresh">,
+) {
   const authorization = authorizeOperatorRequest(request);
   if (!authorization.ok) {
     return jsonError(

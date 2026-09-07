@@ -29,7 +29,10 @@ export interface CoverageBadgeProps {
 export function CoverageBadge({ coverage, compact = false }: CoverageBadgeProps) {
   if (coverage === null) {
     return (
-      <Badge tone="muted" title="No score under the active model, so nothing has been measured yet.">
+      <Badge
+        tone="muted"
+        title="No score under the active model, so nothing has been measured yet."
+      >
         No coverage
       </Badge>
     );

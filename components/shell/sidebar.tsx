@@ -34,10 +34,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate, healthWarning }: Side
   const active = activeDestination(pathname);
 
   return (
-    <nav
-      aria-label="Primary"
-      className="flex h-full flex-col border-r border-border bg-surface"
-    >
+    <nav aria-label="Primary" className="flex h-full flex-col border-r border-border bg-surface">
       <div
         className={`flex h-[var(--topbar-height)] shrink-0 items-center border-b border-border ${
           collapsed ? "justify-center px-2" : "justify-between px-4"
@@ -73,7 +70,9 @@ export function Sidebar({ collapsed, onToggle, onNavigate, healthWarning }: Side
                 href={destination.href}
                 onClick={onNavigate}
                 aria-current={isActive ? "page" : undefined}
-                title={collapsed ? `${destination.label} - ${destination.purpose}` : destination.purpose}
+                title={
+                  collapsed ? `${destination.label} - ${destination.purpose}` : destination.purpose
+                }
                 aria-label={collapsed ? destination.label : undefined}
                 className={`flex h-10 items-center gap-3 rounded-control border-l-2 text-body font-medium motion-standard transition-colors ${
                   collapsed ? "justify-center px-0" : "px-3"
