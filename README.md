@@ -100,6 +100,12 @@ multi-agent orchestration, no vector database.
 - Scoring configuration rows lock themselves the first time a score is written
   against them, so a stored score always reconciles with the weights that
   produced it.
+- `company_external_ids` resolves a `(provider, external_id)` pair to at most one
+  company, and a trigger refuses to re-point an existing one - merging two
+  companies is a decision, never the side effect of an upsert.
+- `company_discovery_observations` has no public read policy and its
+  anon/authenticated grants are revoked, so raw provider payloads cannot be
+  reached from the ordinary product path at all.
 
 ## The interface
 

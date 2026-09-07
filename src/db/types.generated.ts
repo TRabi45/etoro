@@ -361,6 +361,7 @@ export type Database = {
         Row: {
           agent_run_id: string | null
           canonical_name: string
+          company_stage: Database["public"]["Enums"]["company_stage"]
           created_at: string
           description: string | null
           discovery_reason: string | null
@@ -395,6 +396,7 @@ export type Database = {
         Insert: {
           agent_run_id?: string | null
           canonical_name: string
+          company_stage?: Database["public"]["Enums"]["company_stage"]
           created_at?: string
           description?: string | null
           discovery_reason?: string | null
@@ -429,6 +431,7 @@ export type Database = {
         Update: {
           agent_run_id?: string | null
           canonical_name?: string
+          company_stage?: Database["public"]["Enums"]["company_stage"]
           created_at?: string
           description?: string | null
           discovery_reason?: string | null
@@ -532,6 +535,72 @@ export type Database = {
           },
         ]
       }
+      company_discovery_observations: {
+        Row: {
+          agent_run_id: string | null
+          company_id: string | null
+          created_at: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          observed_domain: string | null
+          observed_geography: string | null
+          observed_name: string
+          provider: string
+          raw_metadata: Json | null
+          source_record_id: string | null
+          source_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_run_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          observed_domain?: string | null
+          observed_geography?: string | null
+          observed_name: string
+          provider: string
+          raw_metadata?: Json | null
+          source_record_id?: string | null
+          source_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_run_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          observed_domain?: string | null
+          observed_geography?: string | null
+          observed_name?: string
+          provider?: string
+          raw_metadata?: Json | null
+          source_record_id?: string | null
+          source_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_discovery_observations_agent_run_id_fkey"
+            columns: ["agent_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_discovery_observations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_domains: {
         Row: {
           agent_run_id: string | null
@@ -567,6 +636,51 @@ export type Database = {
           },
           {
             foreignKeyName: "company_domains_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_external_ids: {
+        Row: {
+          agent_run_id: string | null
+          company_id: string
+          created_at: string
+          external_id: string
+          id: string
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          agent_run_id?: string | null
+          company_id: string
+          created_at?: string
+          external_id: string
+          id?: string
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          agent_run_id?: string | null
+          company_id?: string
+          created_at?: string
+          external_id?: string
+          id?: string
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_external_ids_agent_run_id_fkey"
+            columns: ["agent_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_external_ids_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -1636,7 +1750,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_production_agent_run: { Args: { run_id: string }; Returns: boolean }
     }
     Enums: {
       alias_kind: "legal_entity" | "brand" | "former_name" | "working_alias"
@@ -1648,6 +1762,17 @@ export type Database = {
         | "analysis"
         | "unknown"
       claim_source_relation: "supports" | "contradicts"
+      company_stage:
+        | "pre_seed"
+        | "seed"
+        | "series_a"
+        | "series_b"
+        | "series_c_plus"
+        | "growth"
+        | "late_stage"
+        | "public"
+        | "bootstrapped"
+        | "unknown"
       confidence_level: "low" | "medium" | "high"
       customer_type:
         | "mass_retail"
@@ -1990,6 +2115,18 @@ export const Constants = {
         "unknown",
       ],
       claim_source_relation: ["supports", "contradicts"],
+      company_stage: [
+        "pre_seed",
+        "seed",
+        "series_a",
+        "series_b",
+        "series_c_plus",
+        "growth",
+        "late_stage",
+        "public",
+        "bootstrapped",
+        "unknown",
+      ],
       confidence_level: ["low", "medium", "high"],
       customer_type: [
         "mass_retail",

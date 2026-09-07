@@ -121,6 +121,34 @@ export const MA_STATES = [
 ] as const;
 
 /**
+ * How mature a company is - the funding/maturity axis, and nothing else.
+ *
+ * This is deliberately not called `stage`. The Targets filter and the Agent
+ * tool schema already expose a parameter with that name, and there it means
+ * `ma_state` - ownership and transaction availability. Reusing the word would
+ * quietly change what an existing filter does, so the maturity axis carries its
+ * full domain name in the database, in the types and in conversation.
+ *
+ * It is also distinct from `lifecycle_status` (where a row sits in the
+ * discovery and screening pipeline) and from research state (how the last
+ * research pass ended). `unknown` is the truthful default and a real answer: a
+ * company nobody has researched has no established stage, and inferring one
+ * from a name, a search lead or an M&A state would be an invention.
+ */
+export const COMPANY_STAGES = [
+  "pre_seed",
+  "seed",
+  "series_a",
+  "series_b",
+  "series_c_plus",
+  "growth",
+  "late_stage",
+  "public",
+  "bootstrapped",
+  "unknown",
+] as const;
+
+/**
  * Evidence kinds. `analysis` is research judgement and can never be promoted to
  * `verified_fact`; `unknown` is a real state, not an absence of a record.
  */
@@ -381,6 +409,7 @@ export type ProductLayer = (typeof PRODUCT_LAYERS)[number];
 export type RegulatoryRole = (typeof REGULATORY_ROLES)[number];
 export type EconomicsType = (typeof ECONOMICS_TYPES)[number];
 export type MaState = (typeof MA_STATES)[number];
+export type CompanyStage = (typeof COMPANY_STAGES)[number];
 export type ClaimKind = (typeof CLAIM_KINDS)[number];
 export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 export type SourceType = (typeof SOURCE_TYPES)[number];

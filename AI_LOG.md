@@ -828,6 +828,90 @@ Evidence: the focused file passed twelve consecutive runs, and three more after 
 
 ---
 
+## Milestone 19A.2 — Universe Data Model: Implementation Against the Locked Contract
+
+### The contract this phase started from
+
+Phase 19A.1 left a deliberately failing acceptance suite: 15 tests, **12 red and 3 green**. The twelve were all missing-feature failures — `42703` for `companies.company_stage`, and `PGRST205` for `public.company_external_ids` and `public.company_discovery_observations`. The three green ones were the compatibility guards: the six bootstrap identities match the seed field for field (A), the database holds no company beyond those six (A2), and Milestone 18's stub isolation still hides a synthetically-introduced identity from public reads (L). That RED state was reproduced at the start of this phase before anything was written, so the starting point is measured rather than quoted: `12 failed | 3 passed (15)`.
+
+The rule for this phase was that the suite could not be weakened to accommodate the implementation. One assertion turned out to be unsatisfiable, was escalated rather than edited, and is documented in full below.
+
+### Migration and schema
+
+One forward migration, `supabase/migrations/20260907180000_universe_data_model_foundation.sql`. It creates the `company_stage` enum and the `companies.company_stage` column with a `not null default 'unknown'`, an index on it, the two new tables with their constraints, indexes and triggers, and the row-level security for both. Every statement is guarded — `if not exists`, `create or replace`, `drop ... if exists` before `create`, `exception when duplicate_object` — so the file is safe to re-apply, which mattered later.
+
+**`company_external_ids`** — `id`, `company_id` (required, `on delete cascade`), `provider`, `external_id`, a nullable `agent_run_id`, `created_at`, `updated_at`. `provider` is extensible text and explicitly not an enum: the point of a provider namespace is to admit registries the schema was never told about, and a closed enum would mean a migration every time Universe expansion learns a new source. The load-bearing constraint is a unique index on `(provider, external_id)`, which is what makes one provider identity resolve to at most one canonical company. There is deliberately **no** unique constraint on `(company_id, provider)`: a company legitimately holds several records in one registry, and the contract left identifier history unspecified rather than forbidding it. `external_url` was considered and dropped — the 19A.1 contract does not mention it, and inventing a column is exactly what a locked contract exists to prevent. `agent_run_id` was added because the project rule is that runtime-derived rows carry run provenance, and because it is what lets Milestone 18's isolation apply to this table without a later schema change.
+
+**`company_discovery_observations`** — `id`, nullable `company_id`, `provider`, `observed_name`, optional `observed_domain`, `observed_geography`, `source_record_id` and `source_url`, `first_seen_at`, `last_seen_at`, `raw_metadata` jsonb, nullable `agent_run_id`, timestamps, and a CHECK that `last_seen_at >= first_seen_at`. `company_id` is nullable because an observation routinely exists before a canonical company does, and resolution is an update of the same row, so the record of the first sighting survives it. `on delete set null` rather than cascade: deleting a company does not unmake the fact that a provider reported the entity. Text fields carry non-blank CHECKs and `source_url` must be http(s), matching how the rest of the schema treats optional strings.
+
+### Idempotency, and where it deliberately stops
+
+De-duplication is claimed only where a source can actually support it. A plain unique index on `(provider, source_record_id)` de-duplicates providers that supply a stable record ID; because NULLs are distinct in Postgres, providers without one simply accumulate observations, which is the honest outcome rather than a guess. The index is intentionally **not** partial: Postgres infers an `ON CONFLICT` target from a partial index only when the statement repeats that index's predicate, which PostgREST's upsert does not emit, so a partial index would have made the upsert path fail outright. No fuzzy matching, no name or domain heuristics, no automatic merging — nothing here decides that two differently-identified records are the same entity.
+
+The provenance rule that a replay must not rewrite history is enforced by a trigger, `preserve_discovery_seen_window`, which clamps `first_seen_at` to the earliest sighting and advances `last_seen_at` to the latest. A replaying provider reports its own idea of "first seen", which is simply today; putting the clamp in the database rather than in the repository makes it true for every writer, including a raw upsert. A direct `UPDATE` attempting to push `first_seen_at` forward was tested and was clamped.
+
+The repository adds one thing the trigger cannot: it omits `company_id` from the upsert payload when the caller does not supply one, so a replay cannot un-resolve a row that entity resolution had already attached to a company. That was left out of the trigger on purpose — the column must stay freely updateable, because a future milestone may legitimately need to detach a bad resolution.
+
+### `company_stage`, and the existing `stage` collision
+
+The schema was checked for an equivalent before a new axis was added. `ma_state` is ownership and transaction availability; `lifecycle_status` is the discovery and screening pipeline; `research_state` is how the last research pass ended. None expresses maturity, so this is a genuinely new axis rather than a duplicate.
+
+The name is `company_stage`, never `stage`. `src/db/repositories/targets.ts` exposes a `stage` filter that maps to `.eq("ma_state", ...)`, and `src/ai/tools/schemas.ts` exposes `stage: z.enum(MA_STATES)` to the agent. Both were left byte-for-byte unchanged; no filter was renamed and no existing field was reinterpreted. To stop the two drifting back together, `comment on column` was added to both `companies.company_stage` and `companies.ma_state` stating what each one means and that the product's "stage" filter is the latter, and the `COMPANY_STAGES` block in `src/config/taxonomy.ts` opens by explaining why it is not called `stage`.
+
+One trap was avoided deliberately. A CHECK forcing bootstrap identities to keep `company_stage = 'unknown'` looked consistent with the existing `companies_bootstrap_is_identity_only` constraint, and would have been wrong: a bootstrap identity keeps its `record_origin` after the pipeline researches it, so the constraint would have made a genuine future finding permanently unrecordable. The six identities are `unknown` because the column default is `unknown` and nothing wrote anything else — not because a backfill decided it. No stage was inferred from a name, a search lead, a research tier or an M&A state.
+
+### Security, and what raw provider metadata can reach
+
+Two different postures, because the two tables are different kinds of data.
+
+External identifiers are identity data of the same class as aliases and domains, so they follow the rule Milestone 18 gave those tables: a public `SELECT` policy that returns a row only when the company it points at is itself readable, and only when its own provenance is not synthetic. That keeps the table from becoming a side channel around stub isolation, and it exposes strictly less than the `companies` table already does. It also keeps test L2 meaningful rather than vacuous — the anon read genuinely runs and genuinely returns nothing for a hidden company, instead of erroring out before it can prove anything.
+
+Discovery observations get no public policy at all **and** their anon/authenticated grants are revoked outright. Raw provider payloads are third-party data captured for audit; making them internal by construction is stronger than trusting a component not to render them, which the 19A.1 contract explicitly asked for. `chat_sessions` and `chat_messages` are the existing precedent for a table with no public read policy. Before writing this into the migration, the mechanism was checked on a throwaway table: with grants revoked, the service role still read the row and the anon role got `42501`, confirming that PostgREST's schema cache is not privilege-filtered and that revoking would not break the internal path. The probe table was dropped. Any future public exposure of discovery data has to go through a view that omits `raw_metadata`, not a grant on this table.
+
+Neither table has an INSERT, UPDATE or DELETE policy, so every write stays service-role only, exactly like the rest of the schema. Nothing about the meaning of service-role changed, and Milestone 18's migration was not touched.
+
+### A real defect the negative checks found
+
+The mutation checks were written to try to break the constraints rather than to confirm them, and they found something the acceptance suite does not cover. Test E proves that a second `INSERT` for an existing `(provider, external_id)` is rejected — and it is, with `23505`. But a PostgREST **upsert** with `on_conflict=provider,external_id` pointed at a different company succeeded: `ON CONFLICT DO UPDATE` moved the identity from one company to the other, left exactly one valid row behind, and returned success. That is two companies quietly becoming one, which is precisely the automatic merging this milestone is forbidden from implementing.
+
+The repository already refused it, but a code-only guard is the failure mode Milestone 18 was about. A trigger, `forbid_external_identity_reassignment`, now raises `restrict_violation` when an update would change `company_id`, so no writer can re-point a provider identity. A deliberate correction is a delete followed by an insert, which is auditable; an accidental merge is not.
+
+This was found after the migration had already been applied. Rather than layer a second migration file onto a change that belongs in one, and rather than drop anything, the migration's history row was deleted and `supabase migration up` re-ran the whole file — which is safe precisely because every statement in it is guarded. Nothing was reset, nothing was dropped, no table was recreated and the `companies` column and its data were untouched by the `add column if not exists`. The company count and all six stages were re-verified immediately afterwards.
+
+### Repository and type support
+
+`src/config/taxonomy.ts` gains `COMPANY_STAGES` and `CompanyStage`, byte-identical to the database enum. `src/db/types.generated.ts` was regenerated from the local database; besides the two new tables and the new enum it also picked up `is_production_agent_run`, which has existed since Milestone 18 but had never been regenerated into the types.
+
+`src/db/repositories/company-external-ids.ts` — `upsertCompanyExternalId`, `listCompanyExternalIds`, `findCompanyIdByExternalId`. The upsert is idempotent for the same company and throws when the identity is held by a different one; it is deliberately not a blind `ON CONFLICT DO UPDATE`, for the reason above. The read-then-insert is not a lock and does not need to be — the unique index is the guarantee, so a concurrent writer loses with a constraint violation rather than by overwriting.
+
+`src/db/repositories/company-discovery-observations.ts` — `recordDiscoveryObservation`, `attachObservationToCompany`, `listDiscoveryObservationsForCompany`. `listDiscoveryObservationsForCompany` does not select `raw_metadata`: a payload has no business in a shape that could travel towards a page, even from a service-role caller. Both modules follow the existing internal-repository convention — an explicit `TypedSupabaseClient` parameter and `RepositoryWriteError` on failure. No generic provider framework was introduced.
+
+### The one assertion that could not be satisfied, and the approval to correct it
+
+Test G validates the returned row against `companyDiscoveryObservationContractSchema`, which declared `firstSeenAt: z.iso.datetime()` and the same for `lastSeenAt`. Zod 4 defaults that rule to `offset: false`, so its regex ends `(?:Z))$` and only a `Z` suffix is accepted. A Postgres `timestamptz` renders as `2026-09-07T18:00:00+00:00`, verified directly at both layers — `select to_json(first_seen_at)` and the REST response return the same string — and Postgres has no output mode that emits `Z`; `timestamp without time zone` emits no offset at all and fails the same rule.
+
+No temporal column type can satisfy it. The only ways to make it pass were to store the timestamps as `text`, which would turn the `last_seen_at >= first_seen_at` CHECK and the earliest/latest clamp into string comparisons that are wrong for any non-`Z` input, or to make the table a view with cast columns, which would break test I because `ON CONFLICT` is unsupported on views. In the RED phase the line was never reached: test G failed at the insert with `PGRST205` long before it parsed anything, so this is a tests-first blind spot surfacing at GREEN rather than a disagreement about behavior. The prose contract in `docs/UNIVERSE_DATA_MODEL_19A.md` asks only for "required timestamps with `last_seen_at >= first_seen_at`" — the Zod encoding was stricter than the prose it encodes.
+
+The implementation was **not** bent to fit. Work stopped, the finding was presented with the evidence, and explicit approval was given for a one-parameter correction confined to `tests/specifications/universe-data-model.ts`: `z.iso.datetime()` became `z.iso.datetime({ offset: true })` for those two fields. `tests/integration/universe-data-model.test.ts` was not touched, and no assertion in it was changed, removed or skipped. The corrected rule was then mutation-checked so it could not pass vacuously: it accepts `+00:00` and `Z`, and still rejects a date with no time, a datetime with no offset, garbage, null and a numeric epoch.
+
+### RED to GREEN, and what was actually run
+
+The acceptance suite went from **12 failed / 3 passed** to **15 passed / 15**. The full integration suite passed **69/69 across 7 files**, including Milestone 18's `stub-intelligence-isolation.test.ts` at 8/8 with no change to that file — the flaky-assertion fix from the previous commit was left exactly as it was.
+
+Twenty-four mutation and negative checks were run against the live local database through a temporary script, which was deleted afterwards. They proved the constraints are real rather than vacuous: the database rejects a second company claiming an identity (`23505`); a raw upsert can no longer move one (`23001`); the repository refuses it with an explanatory error; an unresolved observation genuinely has a null `company_id`; a replay updates one row, preserves the earliest sighting, advances the latest and does not clear an established resolution; a direct attempt to push `first_seen_at` forward is clamped; observations without a source record ID stay distinct; anon reads of `company_discovery_observations` return `42501` for the whole row and for `raw_metadata` alone; an identifier for a visible company **is** publicly readable while one for a stub-isolated company is not, so the policy is doing work; anon cannot write to either table; and a backwards seen-window, a blank provider and a non-http source URL are each rejected with `23514`. All twenty-four passed after the reassignment trigger was added; three had failed before it, all from that one root cause.
+
+Local database verification, from actual queries rather than assumption. `public.companies` holds exactly **6** rows: `alpaca`, `dfns`, `getquin`, `griffin`, `hypernative`, `swan` — the same six as before the migration, still `bootstrap_identity` and `research_pending`. No seventh company was created. All six carry `company_stage = 'unknown'`. Both new tables exist and both hold **0** rows after the suites and the mutation checks finished; every fixture identity, observation, identifier and agent run created by a test was cleaned up, and no `19a2-mutation-checks` or `universe-19a-acceptance` run survives. The stub agent run and its intelligence still exist under the service role and remain invisible to anon reads.
+
+Gates: `npm.cmd run lint` clean, `npm.cmd run typecheck` clean, `npm.cmd test` **266/266 across 27 files**, `npm.cmd run build` compiled and generated all 11 routes, `npm.cmd run test:integration` 69/69. Prettier was run on the changed and added files only; the known repository-wide formatting backlog was left alone and is not claimed to be fixed. `git diff --check` is clean apart from Git's informational LF-to-CRLF notices.
+
+### Deliberately not done
+
+No provider, adapter or external call — no Wikidata, GLEIF, EBA, ESMA, ASIC, MAS, FCA, SEC, Brave or Tavily. No entity resolution, fuzzy matching or automatic merging. No universe classification, no Indexed/Monitored/Deep promotion rules, no monitoring cadence change, no event-driven refresh, no competitor ingestion. No Stage filter in the UI and no user-facing change of any kind: Targets, Briefing, Company Profile, Market Map, Competitors, Monitoring, the agent conversation and the styling are untouched. No fabricated provider identifiers and no fabricated observations were written for the six bootstrap companies. Nothing was pushed, `main` was not merged, and the two commits that carry the tests-first history and the flaky-assertion fix were not amended.
+
+README was synchronized minimally rather than rewritten: nothing in it was made false by this schema, so the only change is two bullets in the existing "Enforced boundaries" list, which is where the other database-level invariants are already recorded.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:
