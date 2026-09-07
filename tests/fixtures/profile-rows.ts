@@ -159,6 +159,14 @@ export const COMPANY_ROW: RawCompanyRow = {
   primary_domain: "example.com",
   theme_tags: ["wealth_management"],
   enabling_layers: ["ai"],
+  record_origin: "agent_generated",
+  research_tier: "monitored",
+  research_tier_reason:
+    "Passed the early screen and has recorded evidence, but has not yet been scored.",
+  research_tier_confidence: "medium",
+  research_state: "complete",
+  last_researched_at: "2026-09-03T10:00:00.000Z",
+  next_refresh_at: "2026-10-03T10:00:00.000Z",
   updated_at: "2026-09-03T10:00:00.000Z",
 };
 
@@ -259,7 +267,16 @@ export function fullProfileRows(): RawProfileRows {
 /** A bootstrap identity with nothing researched behind it yet. */
 export function identityOnlyRows(): RawProfileRows {
   return {
-    company: COMPANY_ROW,
+    company: {
+      ...COMPANY_ROW,
+      record_origin: "bootstrap_identity",
+      research_tier: "indexed",
+      research_tier_reason: "Discovered identity with no evidence gathered yet.",
+      research_tier_confidence: null,
+      research_state: "pending",
+      last_researched_at: null,
+      next_refresh_at: null,
+    },
     claims: [],
     metrics: [],
     fundamentals: null,

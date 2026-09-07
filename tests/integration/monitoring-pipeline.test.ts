@@ -190,6 +190,73 @@ describe("pipeline resilience", () => {
   });
 });
 
+describe("auto-enrichment", () => {
+  it("selects no more than the configured limit of eligible indexed companies", async () => {
+    // Three fresh identities: all `indexed` (the default tier) and all
+    // immediately due (`next_refresh_at` is null until something sets it) -
+    // exactly the pool workstream E's auto-enrichment selects from.
+    const db = client();
+    const runId = await newAgentRun();
+    const names = ["Enrich Candidate One", "Enrich Candidate Two", "Enrich Candidate Three"];
+    for (const canonicalName of names) {
+      const created = await createDiscoveredCompany(db, {
+        canonicalName,
+        discoveryReason: "Test fixture for auto-enrichment selection.",
+        agentRunId: runId,
+        entityRole: "operating_company",
+      });
+      if (!created.ok) throw new Error(created.reason);
+      createdCompanyIds.push(created.companyId);
+    }
+
+    const failingFetch: typeof fetch = async () => {
+      throw new Error("network disabled in test");
+    };
+
+    const report = await runMonitoringPass({
+      trigger: "manual",
+      maxSources: 1,
+      idempotencyKey: `test-auto-enrich-${crypto.randomUUID()}`,
+      feeds: [{ name: "Test feed", url: "https://example.com/feed.xml" }],
+      fetchImpl: failingFetch,
+      autoEnrichLimit: 1,
+    });
+    createdRunIds.push(report.runId);
+
+    // Three companies were eligible; the configured limit of one is what
+    // actually ran, not "however many happened to be due."
+    expect(report.enrichedCompanies.length).toBe(1);
+
+    const researchRuns = await db
+      .from("company_research_runs")
+      .select("company_id")
+      .in("company_id", createdCompanyIds);
+    expect(researchRuns.data?.length).toBe(1);
+  });
+
+  it("does not auto-enrich on a reused monitoring run", async () => {
+    const key = `test-auto-enrich-reused-${crypto.randomUUID()}`;
+    const failingFetch: typeof fetch = async () => {
+      throw new Error("network disabled in test");
+    };
+    const options = {
+      trigger: "manual" as const,
+      maxSources: 1,
+      idempotencyKey: key,
+      feeds: [{ name: "Test feed", url: "https://example.com/feed.xml" }],
+      fetchImpl: failingFetch,
+      autoEnrichLimit: 1,
+    };
+
+    const first = await runMonitoringPass(options);
+    createdRunIds.push(first.runId);
+    const second = await runMonitoringPass(options);
+
+    expect(second.reused).toBe(true);
+    expect(second.enrichedCompanies).toEqual([]);
+  });
+});
+
 describe("safe fetching", () => {
   it("refuses a private address without making a request", async () => {
     let called = false;

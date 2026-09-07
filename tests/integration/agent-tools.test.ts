@@ -221,14 +221,37 @@ describe("discovery tools", () => {
 });
 
 describe("monitoring from the chat", () => {
-  it("accepts a company refresh but states plainly that nothing ran", async () => {
-    // Still a genuine stub: there is no per-company research pass, only the
-    // feed-driven monitoring run. Saying so is accurate rather than stale.
-    const result = await executeRefreshCompany({ slug: "getquin", source_limit: 5 });
+  it("runs a real bounded research pass instead of reporting itself unimplemented", async () => {
+    // Fetching is stubbed out so this costs no network and no model call.
+    // Every candidate therefore fails, which is the point: what is under
+    // test is that a real research run happened and reported itself
+    // honestly, not what it found.
+    const failingFetch: typeof fetch = async () => {
+      throw new Error("network disabled in test");
+    };
+
+    const result = await executeRefreshCompany(
+      { slug: "getquin", source_limit: 5 },
+      { fetchImpl: failingFetch },
+    );
 
     expect(result.ok).toBe(true);
-    expect((result.data as { status: string }).status).toBe("not_implemented");
-    expect(result.warnings.join(" ")).toMatch(/no sources were fetched/i);
+    const payload = result.data as {
+      runId: string;
+      status: string;
+      scored: boolean;
+      counts: Record<string, number>;
+    };
+    // A real run id, from a real row - not the stub's fixed shape.
+    expect(payload.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(JSON.stringify(payload)).not.toMatch(/not_implemented/);
+    expect(result.warnings.join(" ")).not.toMatch(/is a stub|not implemented yet/i);
+    // Nothing could be fetched, and the envelope says so rather than implying
+    // a refresh happened.
+    expect(payload.status).toBe("partial_success");
+    expect(payload.counts.claimsWritten).toBe(0);
+    expect(payload.scored).toBe(false);
+    expect(result.warnings.join(" ")).toMatch(/no document could be fetched/i);
   });
 
   it("runs the real pipeline instead of reporting itself unimplemented", async () => {

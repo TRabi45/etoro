@@ -13,7 +13,7 @@
    * **Bootstrap:** Minimal seed data only (Identity, alias, domain). NO scores, NO profiles.
    * **Gold Benchmark:** 8 specific deep-profiled companies used ONLY for external testing. NEVER ingest these into the production database.
    * **Runtime Knowledge:** Data extracted by the running pipeline. Every record MUST have `agent_run_id` and source provenance.
-5. **Deterministic Scoring:** AI/LLMs DO NOT calculate scores. TypeScript code calculates scores using the `v0.2` configurations.
+5. **Deterministic Scoring:** AI/LLMs DO NOT calculate scores. TypeScript calculates the one active `v0.3` score; Platform, Tuck-in, and Hybrid are classifications, not competing scorecards.
 6. **Uncertainty is First-Class:** `Unknown` is a valid state. NEVER convert missing financial data to `0`.
 7. **AI Log:** You must autonomously update `AI_LOG.md` *only* upon successful completion of a milestone. Document your model, decisions, failures, and corrections in English.
 

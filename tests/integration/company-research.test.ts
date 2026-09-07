@@ -298,17 +298,11 @@ describe("researchCompany", () => {
 
     const db = client();
     const companyId = (await db.from("companies").select("id").eq("slug", slug).single()).data!.id;
-    const scores = await db
-      .from("scores")
-      .select("positive_normalized, score_state, recommendation")
-      .eq("company_id", companyId)
-      .single();
-    // Evidence gathered before the block remains useful: a row exists, but it
-    // honestly says nothing was scored - never a fabricated number, and never
-    // silently no row at all.
-    expect(scores.data?.positive_normalized).toBeNull();
-    expect(scores.data?.score_state).toBe("research_only");
-    expect(scores.data?.recommendation).toBe("blocked");
+    const scores = await db.from("scores").select("id").eq("company_id", companyId);
+    // Evidence gathered before the block remains useful, but section 28 orders
+    // exact-entity resolution before scoring. There is no research-only score
+    // placeholder for an entity we cannot safely call the target.
+    expect(scores.data).toEqual([]);
   });
 
   it("preserves both sides of a contradiction rather than picking one", async () => {

@@ -29,6 +29,10 @@ describe("mapCompanyProfile", () => {
       slug: "example-co",
       legalEntityName: "Example Co Ltd",
       primaryDomain: "example.com",
+      researchTier: "monitored",
+      researchState: "complete",
+      lastResearchedAt: "2026-09-03T10:00:00.000Z",
+      nextRefreshAt: "2026-10-03T10:00:00.000Z",
     });
     // The assessed path comes from the assessment, not from the identity row.
     expect(profile.path).toBe("tuck_in");
