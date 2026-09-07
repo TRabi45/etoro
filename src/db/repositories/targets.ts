@@ -1,6 +1,7 @@
 import { createPublicClient } from "@/src/db/client";
 import { getActiveScoringModelId } from "@/src/db/repositories/scoring-models";
 import type { RepositoryResult } from "@/src/db/repositories/result";
+import type { ResearchState } from "@/src/db/repositories/company-tiers";
 import type {
   MaState,
   RecommendationState,
@@ -51,6 +52,10 @@ export interface TargetSummary {
    * nothing has been done.
    */
   lastResearchedAt: string | null;
+  /** When policy says this company is due to be looked at again. */
+  nextRefreshAt: string | null;
+  /** The stored execution state of the last research pass. */
+  researchState: ResearchState;
   /** False when the company is still an identity with no assessment. */
   hasResearch: boolean;
 }
@@ -99,7 +104,7 @@ export async function searchTargets(
   let query = connection.client
     .from("companies")
     .select(
-      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, last_researched_at, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, strategic_fit_summary, why_now, created_at)",
+      "slug, canonical_name, legal_entity_name, primary_domain, theme_tags, hq_country, ma_state, last_researched_at, next_refresh_at, research_state, scores(final_score, recommendation, weighted_coverage, lower_bound, upper_bound, calculated_at, scoring_model_id), assessments(id, path, strategic_fit_summary, why_now, created_at)",
     )
     // Screened-out rows were never targets; precedents are real but unavailable.
     // Neither belongs in a ranked target search.
@@ -158,6 +163,8 @@ export async function searchTargets(
       thesis: latestAssessment?.strategic_fit_summary ?? null,
       whyNow: latestAssessment?.why_now ?? null,
       lastResearchedAt: row.last_researched_at,
+      nextRefreshAt: row.next_refresh_at,
+      researchState: row.research_state,
       hasResearch: assessments.length > 0,
     };
   });

@@ -37,6 +37,8 @@ function target(overrides: Partial<TargetSummary> = {}): TargetSummary {
     thesis: null,
     whyNow: null,
     lastResearchedAt: null,
+    nextRefreshAt: null,
+    researchState: "pending",
     hasResearch: false,
     ...overrides,
   };
