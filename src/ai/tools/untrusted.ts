@@ -23,9 +23,9 @@ import type { Citation } from "@/src/ai/tools/envelope";
  * a region only benefits if the region's boundaries cannot be forged.
  *
  * Scope: this module addresses the fields a citation carries. Free-text
- * statements nested inside an evidence packet are written by this system's own
- * extractor today; when Milestone 4 starts deriving them from fetched pages, the
- * extractor must pass them through `wrapUntrusted` too.
+ * statements nested inside an evidence packet are derived from fetched pages by
+ * the extraction pipeline and remain data, never instructions, at every model
+ * boundary.
  */
 
 export const UNTRUSTED_OPEN = "<untrusted_source_text>";

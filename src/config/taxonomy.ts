@@ -5,7 +5,7 @@
  * as frozen arrays rather than loose strings so that a future extraction step
  * cannot quietly invent a new category, and so the TypeScript union and the
  * PostgreSQL enum stay in step - the values below are byte-identical to the
- * enum types created in the initial migration.
+ * enum types created by the committed forward migrations.
  */
 
 /**
@@ -42,9 +42,6 @@ export const STRATEGIC_VECTORS = [
 
 /** Deal size never decides the path; the operating role does. */
 export const TARGET_PATHS = ["platform", "tuck_in", "hybrid"] as const;
-
-/** The paths that own a scorecard. `hybrid` is scored as both, never averaged. */
-export const SCORABLE_PATHS = ["platform", "tuck_in"] as const;
 
 export const TARGET_OBJECTS = [
   "full_company",
@@ -378,7 +375,6 @@ export type StrategicTheme = (typeof STRATEGIC_THEMES)[number];
 export type EnablingLayer = (typeof ENABLING_LAYERS)[number];
 export type StrategicVector = (typeof STRATEGIC_VECTORS)[number];
 export type TargetPath = (typeof TARGET_PATHS)[number];
-export type ScorablePath = (typeof SCORABLE_PATHS)[number];
 export type TargetObject = (typeof TARGET_OBJECTS)[number];
 export type CustomerType = (typeof CUSTOMER_TYPES)[number];
 export type ProductLayer = (typeof PRODUCT_LAYERS)[number];

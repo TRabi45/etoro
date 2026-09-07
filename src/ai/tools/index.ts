@@ -91,7 +91,7 @@ export const agentTools = {
 
   refresh_company: tool({
     description:
-      "Queue a refresh of one company's research. Currently a stub: it accepts the request but fetches nothing, because live source retrieval is not implemented yet. Never imply that new information has arrived after calling it.",
+      "Run a real, bounded research pass for one company: builds a source plan from its verified domain and existing evidence, fetches up to source_limit documents, and re-derives its evidence, assessment and v0.3 score. Report the counts it actually returns - a company can come back with new evidence and still show scored: false if nothing yet clears the entity gate.",
     inputSchema: refreshCompanyInputSchema,
     execute: async (input) => guardTool("refresh_company", () => executeRefreshCompany(input)),
   }),

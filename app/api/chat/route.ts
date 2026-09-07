@@ -130,9 +130,10 @@ function readOwnerToken(request: Request): string | null {
 
 function ownerCookie(token: string): string {
   // HttpOnly so page scripts cannot read it; SameSite=Lax so it is not sent from
-  // another site's forms. Not marked Secure, because local development is plain
-  // HTTP - the platform serves HTTPS in every deployed environment.
-  return `${OWNER_COOKIE}=${token}; Path=/api/chat; HttpOnly; SameSite=Lax; Max-Age=86400`;
+  // another site's forms. Local development is plain HTTP, while deployed
+  // environments must never send the ownership token over an insecure channel.
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${OWNER_COOKIE}=${token}; Path=/api/chat; HttpOnly; SameSite=Lax${secure}; Max-Age=86400`;
 }
 
 export async function POST(request: Request): Promise<Response> {

@@ -25,12 +25,14 @@ import {
 } from "@/src/db/repositories/company-profile";
 import { getMarketMap, searchTargets, type MarketMap } from "@/src/db/repositories/targets";
 import { runMonitoringPass } from "@/src/research/pipeline/runner";
+import { researchCompany } from "@/src/research/pipeline/company-research";
+import { analyzeCompanyEvidence } from "@/src/ai/provider-adapter";
 
 /**
  * Tool executors.
  *
- * Each one reads through a Milestone 2 repository and returns an envelope. They
- * hold no business logic of their own: a tool that computed anything would be a
+ * Each one reads through a repository and returns an envelope. They hold no
+ * business logic of their own: a tool that computed anything would be a
  * second, unversioned source of truth competing with the deterministic engine.
  *
  * Two habits run through all of them:
@@ -318,7 +320,7 @@ export async function executeGetRecentEvents(
   }
   if (result.data.length === 0) {
     return toolEmpty(
-      `No events are recorded on or after ${input.since_date}. The monitoring pipeline that writes events is not implemented yet (it is scheduled for a later milestone), so the events table is empty. Say that nothing has been recorded rather than describing events from prior knowledge.`,
+      `No events are recorded on or after ${input.since_date}. This means nothing has been recorded by the monitoring pipeline in that window, not that nothing happened in the world. Do not describe events from prior knowledge.`,
     );
   }
 
@@ -436,37 +438,71 @@ export async function executeGetMarketMap(
 }
 
 /**
- * Refresh stub.
+ * Runs a real, bounded company-research pass from the chat.
  *
- * Deliberately does not fetch anything. The source-retrieval pipeline is a later
- * milestone, and the honest response is an accepted job that has not run - not a
- * fabricated set of freshly-discovered facts.
+ * This was a stub through Milestone 4: it accepted a request and fetched
+ * nothing, because the company-specific pipeline behind `run_monitoring_quick`
+ * did not exist yet. It does now (`researchCompany`, workstream D of
+ * Milestone 5) - this tool is the same "run it from the chat" wiring
+ * `run_monitoring_quick` already proved out for the feed loop, pointed at the
+ * company-specific pipeline instead.
+ *
+ * `source_limit` bounds the fetch, not the whole run: analysis still has to
+ * finish inside one conversation turn, so this always uses a request-scoped
+ * idempotency key (the caller asked for a refresh now, and silently returning
+ * a stale scheduled run would answer a different question) and never the
+ * pipeline's full default budget.
  */
+export interface RefreshCompanyOptions {
+  /** Injected by tests so the wiring can be exercised without a network or a paid model call. */
+  fetchImpl?: typeof fetch;
+  analyzeImpl?: typeof analyzeCompanyEvidence;
+}
+
 export async function executeRefreshCompany(
   input: RefreshCompanyInput,
+  options: RefreshCompanyOptions = {},
 ): Promise<ToolResult<unknown>> {
   const profile = await getCompanyProfileWithEvidence(input.slug);
   if (!profile.ok) {
     return toolFailure(repositoryProblemToError(profile.problem));
   }
   if (!profile.data) {
-    return toolEmpty(`No company with slug "${input.slug}" exists, so no refresh was queued.`);
+    return toolEmpty(`No company with slug "${input.slug}" exists, so no refresh was run.`);
+  }
+
+  const report = await researchCompany({
+    slug: input.slug,
+    trigger: "manual",
+    idempotencyKey: `chat-${crypto.randomUUID()}`,
+    budgetOverride: { maxFetchedDocuments: input.source_limit, overallDeadlineMs: 45_000 },
+    fetchImpl: options.fetchImpl,
+    analyzeImpl: options.analyzeImpl,
+  });
+
+  const warnings = [...report.warnings];
+  if (report.sourcesFetched === 0) {
+    warnings.push(
+      "No document could be fetched for this company. Tell the user nothing new was gathered rather than implying a refresh happened.",
+    );
   }
 
   return toolSuccess(
     {
-      accepted: true,
-      status: "not_implemented",
-      companySlug: input.slug,
-      sourceLimit: input.source_limit,
-      requestedAt: new Date().toISOString(),
+      runId: report.runId,
+      status: report.status,
+      companySlug: report.companySlug,
+      counts: {
+        sourcesPlanned: report.sourcesPlanned,
+        sourcesFetched: report.sourcesFetched,
+        claimsWritten: report.claimsWritten,
+      },
+      scored: report.scored,
+      researchTier: report.tier,
+      nextRefreshAt: report.nextRefreshAt,
+      note: "These counts are what this run actually fetched and wrote. `scored: false` means evidence was gathered but nothing could be scored yet - not that the refresh failed.",
     },
-    {
-      confidence: "high",
-      warnings: [
-        "This is a stub. No sources were fetched and no data changed, because live retrieval is not implemented yet. Tell the user the refresh cannot run yet instead of implying new information has arrived.",
-      ],
-    },
+    { confidence: "high", warnings },
   );
 }
 
@@ -510,6 +546,10 @@ export async function executeRunMonitoringQuick(
     // they did not ask.
     idempotencyKey: `chat-${crypto.randomUUID()}`,
     fetchImpl: options.fetchImpl,
+    // A company-research pass does not fit inside this turn's time budget the
+    // same way the monitoring pass itself has been tightened to - the
+    // scheduled/CLI/API-route runs are where auto-enrichment belongs.
+    autoEnrichLimit: 0,
   });
 
   const warnings = [...report.warnings];

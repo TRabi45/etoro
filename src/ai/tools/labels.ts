@@ -39,6 +39,6 @@ export const TOOL_ACTIVITY_LABELS: Record<AgentToolName, string> = {
   get_recent_events: "Checking recent events",
   explain_score: "Retrieving score breakdown",
   get_market_map: "Building market map",
-  refresh_company: "Queueing company refresh",
+  refresh_company: "Running company research",
   run_monitoring_quick: "Running a monitoring pass",
 };
