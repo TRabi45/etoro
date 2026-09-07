@@ -29,10 +29,36 @@ import { stripDelimiters, UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/src/ai/tools
 
 export const ANALYST_PROMPT_VERSION = "analyst/v1";
 
-const isoDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected an ISO date (YYYY-MM-DD)")
-  .nullable();
+/**
+ * A field the model may leave out because the evidence does not establish it.
+ *
+ * Omission rather than an explicit `null`, and the reason is mechanical: a
+ * nullable field becomes a union type (`["string", "null"]`) in the JSON
+ * Schema sent to the provider, and Anthropic refuses a tool schema carrying
+ * more than 16 union-typed parameters - "exponential compilation cost". This
+ * schema had 27 and was rejected outright, so no live analysis could run at
+ * all. An optional field is a plain type with the key absent from `required`,
+ * which costs nothing.
+ *
+ * Parsing stays deliberately lenient in the other direction: a model told to
+ * omit a field will sometimes send `null` anyway, and rejecting that would
+ * throw away an entire analysis over a formatting preference. Both spellings
+ * mean the same thing and both are accepted.
+ *
+ * The transform then restores the domain shape, so `AnalystOutput` still
+ * carries an explicit `null` and every consumer downstream sees exactly one
+ * representation of "unknown". Absent or null on the wire, null in the model,
+ * never zero and never an empty string.
+ */
+function unknownable<T extends z.ZodType>(schema: T) {
+  return z
+    .preprocess((value) => (value === null ? undefined : value), schema.optional())
+    .transform((value) => (value ?? null) as z.infer<T> | null);
+}
+
+const isoDateSchema = unknownable(
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected an ISO date (YYYY-MM-DD)"),
+);
 
 /** One atomic fact, tied to the document it came from by index. */
 export const analystClaimSchema = z.object({
@@ -44,13 +70,10 @@ export const analystClaimSchema = z.object({
     .string()
     .min(1)
     .describe("What is being stated, e.g. 'annual revenue' or 'regulatory licence'."),
-  valueText: z.string().nullable(),
-  valueNumeric: z.number().nullable(),
-  valueUnit: z.string().nullable(),
-  valueCurrency: z
-    .string()
-    .regex(/^[A-Z]{3}$/)
-    .nullable(),
+  valueText: unknownable(z.string()),
+  valueNumeric: unknownable(z.number()),
+  valueUnit: unknownable(z.string()),
+  valueCurrency: unknownable(z.string().regex(/^[A-Z]{3}$/)),
   valueStatus: z.enum(VALUE_STATUSES),
   asOfDate: isoDateSchema.describe(
     "The date this fact is true for - usually not the publication date.",
@@ -61,33 +84,73 @@ export const analystClaimSchema = z.object({
     .int()
     .min(0)
     .describe("Index into the supplied document list this claim was read from."),
-  excerpt: z
-    .string()
-    .nullable()
-    .describe("A short supporting quotation from the document, if one exists."),
-  conflictGroup: z
-    .string()
-    .nullable()
-    .describe(
-      "Claims that disagree about the same fact share a group id (e.g. 'revenue_fy2025'). Leave null when nothing conflicts.",
-    ),
+  excerpt: unknownable(z.string()).describe(
+    "A short supporting quotation from the document. Omit when none exists.",
+  ),
+  conflictGroup: unknownable(z.string()).describe(
+    "Claims that disagree about the same fact share a group id (e.g. 'revenue_fy2025'). Omit when nothing conflicts.",
+  ),
 });
+
+/** The eight v0.3 dimensions, in the order `docs/ACQUISITION_THESIS.md` states them. */
+export const ANALYST_DIMENSION_KEYS = [
+  "strategic_fit",
+  "incremental_capability",
+  "market_customers_distribution",
+  "product_technology",
+  "financial_quality",
+  "regulatory_feasibility",
+  "integration_team",
+  "deal_feasibility",
+] as const;
+
+export type AnalystDimensionKey = (typeof ANALYST_DIMENSION_KEYS)[number];
 
 /** Section 27: a dimension score always carries the reasoning and the evidence it rests on. */
 const dimensionScoreSchema = z.object({
   status: z.enum(["scored", "unknown", "not_applicable"]),
-  score: z
-    .number()
-    .int()
-    .min(0)
-    .max(5)
-    .nullable()
-    .describe("0-5 against the anchor wording. Null unless status is 'scored'."),
+  score: unknownable(z.number().int().min(0).max(5)).describe(
+    "0-5 against the anchor wording. Omit unless status is 'scored'.",
+  ),
   reason: z.string().min(1),
   citingClaimIndexes: z
     .array(z.number().int().min(0))
     .describe("Indices into this same output's claims array that support this judgement."),
 });
+
+type DimensionScore = z.infer<typeof dimensionScoreSchema>;
+
+/**
+ * The dimensions travel as a list rather than as eight named properties.
+ *
+ * Purely a wire-format concession, and a measured one: Anthropic caps a tool
+ * schema at 24 optional parameters, and eight sibling objects each carrying an
+ * optional `score` spent eight of them on what is structurally one field. As a
+ * list, the item schema is described once. The transform immediately restores
+ * the keyed object, so `AnalystOutput.dimensions` is unchanged and no consumer
+ * knows this happened.
+ *
+ * A dimension the analyst leaves out becomes `unknown` - never a zero, and
+ * never silently dropped, because the scoring engine must be handed all eight
+ * and must be able to tell "not established" from "scored badly".
+ */
+const dimensionListSchema = z
+  .array(dimensionScoreSchema.extend({ key: z.enum(ANALYST_DIMENSION_KEYS) }))
+  .describe("One entry per dimension. Include all eight.")
+  .transform((entries) => {
+    const byKey = new Map(entries.map(({ key, ...score }) => [key, score as DimensionScore]));
+    return Object.fromEntries(
+      ANALYST_DIMENSION_KEYS.map((key) => [
+        key,
+        byKey.get(key) ?? {
+          status: "unknown" as const,
+          score: null,
+          reason: "The analyst did not return a judgement for this dimension.",
+          citingClaimIndexes: [],
+        },
+      ]),
+    ) as Record<AnalystDimensionKey, DimensionScore>;
+  });
 
 const gateStateSchema = z.object({
   state: z.enum(["clear", "triggered", "unresolved"]),
@@ -110,10 +173,9 @@ const routeScoreSchema = z.object({
  * the `entity` hard gate directly - the orchestrator does not re-derive it.
  */
 const entityResolutionSchema = z.object({
-  legalEntityConfirmed: z
-    .string()
-    .nullable()
-    .describe("The exact legal entity name the evidence confirms, or null if still unresolved."),
+  legalEntityConfirmed: unknownable(z.string()).describe(
+    "The exact legal entity name the evidence confirms. Omit if still unresolved.",
+  ),
   matchesRecordedIdentity: z
     .boolean()
     .describe(
@@ -125,16 +187,7 @@ const entityResolutionSchema = z.object({
 export const analystOutputSchema = z.object({
   entityResolution: entityResolutionSchema,
   claims: z.array(analystClaimSchema),
-  dimensions: z.object({
-    strategic_fit: dimensionScoreSchema,
-    incremental_capability: dimensionScoreSchema,
-    market_customers_distribution: dimensionScoreSchema,
-    product_technology: dimensionScoreSchema,
-    financial_quality: dimensionScoreSchema,
-    regulatory_feasibility: dimensionScoreSchema,
-    integration_team: dimensionScoreSchema,
-    deal_feasibility: dimensionScoreSchema,
-  }),
+  dimensions: dimensionListSchema,
   // The entity gate is supplied separately, from entityResolution - asking for
   // it twice would let the two disagree. The coverage gate is never asked for:
   // the engine computes it from the dimensions above.
@@ -157,25 +210,22 @@ export const analystOutputSchema = z.object({
     .describe("Platform, tuck-in or hybrid - the operating shape, never a second score."),
   fundamentals: z.object({
     archetype: z.enum(FUNDAMENTAL_ARCHETYPES),
-    revenueQuality: z.string().nullable(),
-    growthAssessment: z.string().nullable(),
-    marginAssessment: z.string().nullable(),
-    burnRunway: z.string().nullable(),
-    concentration: z.string().nullable(),
+    revenueQuality: unknownable(z.string()),
+    growthAssessment: unknownable(z.string()),
+    marginAssessment: unknownable(z.string()),
+    burnRunway: unknownable(z.string()),
+    concentration: unknownable(z.string()),
     unknowns: z.array(z.string()),
   }),
   assessment: z.object({
-    strategicFitSummary: z.string().nullable(),
-    gapClosed: z.string().nullable(),
-    whyNow: z.string().nullable(),
-    synergies: z.string().nullable(),
-    risks: z.string().nullable(),
-    counterThesis: z
-      .string()
-      .nullable()
-      .describe(
-        "The strongest reason not to pursue this, per section 34's mandatory counter-case.",
-      ),
+    strategicFitSummary: unknownable(z.string()),
+    gapClosed: unknownable(z.string()),
+    whyNow: unknownable(z.string()),
+    synergies: unknownable(z.string()),
+    risks: unknownable(z.string()),
+    counterThesis: unknownable(z.string()).describe(
+      "The strongest reason not to pursue this, per section 34's mandatory counter-case.",
+    ),
     unknowns: z.array(z.string()),
   }),
 });

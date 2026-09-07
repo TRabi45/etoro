@@ -240,6 +240,52 @@ describe("evidence to validated v0.3 inputs", () => {
     expect(payload.claims[0].unknownReason).toBeTruthy();
   });
 
+  it("records a valueless 'disclosed' claim as unknown instead of losing the batch", () => {
+    // Observed live: the analyst asserted "legal entity registration" as
+    // disclosed while supplying neither a number nor any text. The database
+    // refuses that row (claims_known_value_is_present), which used to abort
+    // the whole run and discard every other claim with it.
+    const payload = buildExtractionPayload(
+      "fixture-co",
+      ONE_DOCUMENT,
+      analystOutput({
+        claims: [
+          analystClaim({
+            predicate: "legal entity registration",
+            valueStatus: "disclosed",
+            valueNumeric: null,
+            valueText: null,
+          }),
+        ],
+        dimensions: {
+          strategic_fit: SCORED(4, []),
+          incremental_capability: SCORED(3, []),
+          market_customers_distribution: SCORED(3, []),
+          product_technology: SCORED(3, []),
+          financial_quality: SCORED(3, []),
+          regulatory_feasibility: SCORED(4, []),
+          integration_team: SCORED(3, []),
+          deal_feasibility: SCORED(3, []),
+        },
+      }),
+    );
+
+    expect(payload.claims).toHaveLength(1);
+    expect(payload.claims[0].valueStatus).toBe("unknown");
+    expect(payload.claims[0].unknownReason).toMatch(/supplied no value/i);
+    // Unknown, not zero, and not an invented empty string.
+    expect(payload.claims[0].valueNumeric).toBeNull();
+    expect(payload.claims[0].valueText).toBeNull();
+  });
+
+  it("leaves a disclosed claim that does carry a value alone", () => {
+    const payload = buildExtractionPayload("fixture-co", ONE_DOCUMENT, analystOutput());
+
+    expect(payload.claims[0].valueStatus).toBe("disclosed");
+    expect(payload.claims[0].valueNumeric).toBe(5_000_000);
+    expect(payload.claims[0].unknownReason).toBeNull();
+  });
+
   it("carries the classification without letting it reach the scoring inputs", () => {
     // Platform/Tuck-in/Hybrid describes the acquisition shape. If it leaked
     // into `scoring`, it would be a second scorecard competing with v0.3.

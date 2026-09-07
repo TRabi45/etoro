@@ -287,6 +287,23 @@ export async function analyzeCompanyEvidence(
       prompt: buildAnalystRequest(company, documents),
       maxRetries: 1,
       abortSignal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
+      providerOptions: {
+        anthropic: {
+          // The Analyst asks for a company's whole evidence consolidation in
+          // one object - claims, eight dimensions, five gates, five routes,
+          // fundamentals and the assessment. Under the default mode the
+          // provider compiles that schema into a constrained grammar and
+          // rejects it outright ("the compiled grammar is too large"), which
+          // silently reduced every live run to zero claims while every
+          // fixture test stayed green.
+          //
+          // `jsonTool` passes the same schema as an ordinary tool instead of
+          // a grammar-constrained one. The schema is unchanged and Zod still
+          // validates the result at the boundary, so nothing is loosened on
+          // our side; only the provider stops pre-compiling it.
+          structuredOutputMode: "jsonTool",
+        },
+      },
     });
 
     return { output: result.object, problem: null, model, promptVersion: ANALYST_PROMPT_VERSION };

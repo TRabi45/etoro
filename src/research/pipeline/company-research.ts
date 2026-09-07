@@ -217,28 +217,49 @@ export function buildExtractionPayload(
 
   const claims: ExtractionPayload["claims"] = analysis.claims
     .filter((claim) => claim.documentIndex >= 0 && claim.documentIndex < sourceKeyByIndex.length)
-    .map((claim, index) => ({
-      key: `claim-${index}`,
-      subject: claim.subject,
-      predicate: claim.predicate,
-      valueText: claim.valueText,
-      valueNumeric: claim.valueNumeric,
-      valueUnit: claim.valueUnit,
-      valueCurrency: claim.valueCurrency,
-      valueStatus: claim.valueStatus,
-      asOfDate: claim.asOfDate,
-      claimKind: claim.claimKind,
-      conflictGroup: claim.conflictGroup,
-      unknownReason:
-        claim.valueStatus === "unknown" ? "Not established by any fetched document." : null,
-      sources: [
-        {
-          sourceKey: sourceKeyByIndex[claim.documentIndex],
-          relation: "supports" as const,
-          excerpt: claim.excerpt,
-        },
-      ],
-    }));
+    .map((claim, index) => {
+      // A claim that says a value is disclosed or estimated while carrying no
+      // value is internally inconsistent - the database rejects it
+      // (claims_known_value_is_present), and rightly so. Observed against the
+      // live model, which asserted "legal entity registration" as disclosed
+      // with neither a number nor any text.
+      //
+      // Downgraded to `unknown` rather than dropped: that a document raised
+      // this predicate at all is a real observation worth keeping, and an
+      // explicit unknown is exactly how this system is supposed to record
+      // "the subject came up, the value did not". Never a zero, and never a
+      // reason to lose the other claims in the same batch.
+      const assertsKnownValue =
+        claim.valueStatus === "disclosed" || claim.valueStatus === "estimated";
+      const hasValue = claim.valueNumeric !== null || claim.valueText !== null;
+      const inconsistent = assertsKnownValue && !hasValue;
+
+      return {
+        key: `claim-${index}`,
+        subject: claim.subject,
+        predicate: claim.predicate,
+        valueText: claim.valueText,
+        valueNumeric: claim.valueNumeric,
+        valueUnit: claim.valueUnit,
+        valueCurrency: claim.valueCurrency,
+        valueStatus: inconsistent ? ("unknown" as const) : claim.valueStatus,
+        asOfDate: claim.asOfDate,
+        claimKind: claim.claimKind,
+        conflictGroup: claim.conflictGroup,
+        unknownReason: inconsistent
+          ? `The analyst reported this as "${claim.valueStatus}" but supplied no value, so it is recorded as unknown.`
+          : claim.valueStatus === "unknown"
+            ? "Not established by any fetched document."
+            : null,
+        sources: [
+          {
+            sourceKey: sourceKeyByIndex[claim.documentIndex],
+            relation: "supports" as const,
+            excerpt: claim.excerpt,
+          },
+        ],
+      };
+    });
 
   const claimKeyByAnalystIndex = new Map<number, string>();
   let nextClaimKey = 0;

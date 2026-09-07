@@ -30,6 +30,38 @@ import {
  * slice applied: pnpm db:start && pnpm db:reset && pnpm db:seed && pnpm slice:run
  */
 
+/**
+ * An identity-only company this suite owns.
+ *
+ * Deliberately not a bootstrap slug: since Milestone 5 the agent may research
+ * any company without approval, so no seeded company can be assumed to stay
+ * unresearched between runs.
+ */
+async function createIdentityOnlyCompany(): Promise<string> {
+  const connection = createServiceClient();
+  if (!connection.ok) throw new Error(connection.problem.message);
+  const client = connection.client;
+
+  const slug = `identity-only-fixture-${Date.now()}`;
+  const run = await client
+    .from("agent_runs")
+    .insert({ purpose: "test", status: "running" })
+    .select("id")
+    .single();
+  if (run.error || !run.data) throw new Error(run.error?.message ?? "no agent run");
+
+  const { error } = await client.from("companies").insert({
+    slug,
+    canonical_name: `Identity Only Fixture ${slug}`,
+    record_origin: "agent_generated",
+    entity_role: "operating_company",
+    agent_run_id: run.data.id,
+  });
+  if (error) throw new Error(error.message);
+
+  return slug;
+}
+
 beforeAll(async () => {
   const connection = createServiceClient();
   if (!connection.ok) {
@@ -60,7 +92,14 @@ describe("company tools", () => {
   });
 
   it("reports an unresearched company as identity-only instead of inventing one", async () => {
-    const result = await executeGetCompanyProfile({ slug: "swan" });
+    // This test used to point at a bootstrap slug and assume it would stay
+    // unresearched. That assumption died with Milestone 5: the agent is now
+    // allowed to research any company without human approval, so a single
+    // scheduled pass or live demo silently flipped the fixture out from under
+    // the assertion. The test owns its own identity-only company instead.
+    const slug = await createIdentityOnlyCompany();
+
+    const result = await executeGetCompanyProfile({ slug });
 
     expect(result.ok).toBe(true);
     expect(result.confidence).toBe("low");
