@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/**
+ * Inter is the fallback the brand direction names for an internal tool, used
+ * here because the repository carries no licensed copy of eToro's official
+ * product typeface. Swapping it is a change to this declaration and the
+ * `--font-sans` token in `globals.css`, nothing else.
+ *
+ * `display: "swap"` renders the fallback stack immediately rather than
+ * blocking first paint on a webfont - a briefing page that arrives blank is
+ * worse than one that reflows.
+ */
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -20,8 +26,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-canvas text-primary">{children}</body>
     </html>
   );
 }

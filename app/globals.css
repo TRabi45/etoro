@@ -1,27 +1,199 @@
 @import "tailwindcss";
 
 /*
- * The dashboard is deliberately light-only for this milestone: every
- * component below uses hard-coded light-mode Tailwind colors (bg-white
- * cards, slate-900 text), so following the OS dark-mode preference here -
- * which create-next-app's template does by default - would swap the page
- * background to near-black while the text stayed near-black too. A real
- * dark theme is a design task for a later milestone, not a one-line toggle.
+ * eToro Corp Dev Intelligence - design tokens.
+ *
+ * One source of truth for colour, type, spacing, radius and motion. Pages and
+ * feature components consume the semantic names below and never literal hex
+ * values, so a brand refresh is a change to this file rather than a sweep
+ * through every screen.
+ *
+ * The palette is light-first: white surfaces on a faintly green-grey canvas,
+ * near-black text, and eToro green reserved for identity and selection rather
+ * than decoration. Status is always carried by text and icon as well as
+ * colour - see `--color-*-soft` pairs, which exist so a state can be tinted
+ * without the reader having to distinguish hues to understand it.
+ *
+ * Dark mode is deliberately absent for the MVP. The previous milestone's
+ * comment applies unchanged: an OS-driven inversion here would flip the page
+ * background to near-black while near-black text stayed put.
  */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Brand. Green is an accent, never a background for small controls: white
+     text on #13c636 fails AA, so brand-filled controls take near-black text. */
+  --brand-primary: #13c636;
+  --brand-primary-hover: #10ad31;
+  --brand-primary-soft: #e9f8ec;
+
+  /* Text. Three levels only; anything below tertiary is not readable at 13px. */
+  --text-primary: #111411;
+  --text-secondary: #5f685f;
+  --text-tertiary: #7b847c;
+
+  /* Surfaces. The canvas is the page, surfaces are the cards on it. */
+  --canvas: #f5f7f5;
+  --surface: #ffffff;
+  --surface-subtle: #fafbfa;
+
+  /* Borders do the hierarchy work that shadows do in most dashboards. */
+  --border: #dfe5df;
+  --border-strong: #c7d0c8;
+
+  /* Status. Each hue pairs a AA-contrast foreground with a tint for fills. */
+  --info: #175cd3;
+  --info-soft: #eff5ff;
+  --warning: #9a5b00;
+  --warning-soft: #fff4df;
+  --danger: #b42318;
+  --danger-soft: #feeeee;
+
+  /* Focus. A single visible ring for every interactive element, brand-tinted
+     so keyboard focus reads as part of the product rather than the browser. */
+  --focus-ring: #0f7f28;
+
+  /* Fixed shell measurements from the layout spec. Declared as tokens because
+     both the CSS grid and the media queries below have to agree on them. */
+  --nav-width: 224px;
+  --nav-width-collapsed: 64px;
+  --topbar-height: 60px;
+  --agent-width: 400px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Colour utilities: bg-surface, text-secondary, border-strong, and so on.
+     `inline` keeps the generated CSS pointing at the custom property, so the
+     tokens above stay the single place a value is defined. */
+  --color-brand: var(--brand-primary);
+  --color-brand-hover: var(--brand-primary-hover);
+  --color-brand-soft: var(--brand-primary-soft);
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-focus: var(--focus-ring);
+
+  /* Type scale. Body is 14/20; the table step exists because 13px is the
+     density a ranked target list needs without becoming a terminal. */
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-table: 13px;
+  --text-table--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-lead: 16px;
+  --text-lead--line-height: 24px;
+  --text-section: 18px;
+  --text-section--line-height: 24px;
+  --text-section-lg: 20px;
+  --text-section-lg--line-height: 28px;
+  --text-page: 28px;
+  --text-page--line-height: 34px;
+
+  /* Inter is the fallback the brand direction names; the `--font-inter`
+     variable is supplied by next/font in the root layout. */
+  --font-sans:
+    var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Control radius 8, card radius 12, pill only for true tags and statuses. */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+
+  /* Shadows are reserved for temporary elevation - drawers and menus. Nothing
+     that sits permanently in the page layout casts one. */
+  --shadow-menu: 0 4px 16px -4px rgb(17 20 17 / 0.12), 0 2px 4px -2px rgb(17 20 17 / 0.08);
+  --shadow-drawer: -8px 0 32px -8px rgb(17 20 17 / 0.16);
+
+  /* Motion: 120-200ms, never longer. Anything slower reads as lag in a tool
+     an analyst uses every morning. */
+  --ease-standard: cubic-bezier(0.2, 0, 0.1, 1);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  body {
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    /* Contextual alternates off, so "1" stays unambiguous next to "l". */
+    font-feature-settings: "cv05" 1;
+  }
+
+  /*
+   * One focus treatment for the whole product.
+   *
+   * `:focus-visible` rather than `:focus` so a mouse click on a row does not
+   * paint a ring, but every keyboard arrival does. The offset keeps the ring
+   * clear of the element's own border, which matters on dense table rows where
+   * the two would otherwise merge into one thick line.
+   */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Headings inherit the near-black text colour rather than the browser's. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--text-primary);
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  /*
+   * Tabular numerals for every score, percentage, amount and date.
+   *
+   * Proportional digits make a column of scores jitter left and right as the
+   * values change, which reads as noise when the whole point of the column is
+   * comparison down its length.
+   */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Applied to the transition-bearing elements the shell owns. Kept as a
+     utility so the duration stays inside the 120-200ms band by construction. */
+  .motion-standard {
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease-standard);
+  }
+}
+
+/*
+ * Reduced motion is honoured globally rather than per component.
+ *
+ * A vestibular trigger is not something each new panel should have to remember
+ * to opt out of, so transitions and animations collapse to a near-zero
+ * duration here - not to `none`, which would break transitionend listeners.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

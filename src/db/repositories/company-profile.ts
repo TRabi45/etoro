@@ -33,7 +33,12 @@ import type { ResearchTier } from "@/src/domain/tiering/tier-policy";
  * no database in the loop.
  */
 
-const STALE_AFTER_DAYS = 180;
+/**
+ * Exported so the UI's freshness label applies the same rule the mapper does.
+ * Two definitions of "stale" that drift apart would let a profile mark a field
+ * stale in one place and current in another.
+ */
+export const STALE_AFTER_DAYS = 180;
 
 // --- Raw row shapes, mirroring what the query selects ----------------------
 
