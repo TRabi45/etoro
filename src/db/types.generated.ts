@@ -1533,6 +1533,7 @@ export type Database = {
           id: string
           published_at: string | null
           publisher: string | null
+          research_company_id: string | null
           source_type: Database["public"]["Enums"]["source_type"]
           title: string | null
           trust_tier: Database["public"]["Enums"]["source_trust_tier"]
@@ -1548,6 +1549,7 @@ export type Database = {
           id?: string
           published_at?: string | null
           publisher?: string | null
+          research_company_id?: string | null
           source_type: Database["public"]["Enums"]["source_type"]
           title?: string | null
           trust_tier: Database["public"]["Enums"]["source_trust_tier"]
@@ -1563,6 +1565,7 @@ export type Database = {
           id?: string
           published_at?: string | null
           publisher?: string | null
+          research_company_id?: string | null
           source_type?: Database["public"]["Enums"]["source_type"]
           title?: string | null
           trust_tier?: Database["public"]["Enums"]["source_trust_tier"]
@@ -1576,6 +1579,13 @@ export type Database = {
             columns: ["agent_run_id"]
             isOneToOne: false
             referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sources_research_company_id_fkey"
+            columns: ["research_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]

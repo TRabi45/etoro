@@ -12,8 +12,11 @@ import {
 import {
   applyRefreshSchedule,
   applyTierDecision,
+  getCompanyTierState,
   type ResearchState,
 } from "@/src/db/repositories/company-tiers";
+import { finishAgentRun, startAgentRun } from "@/src/db/repositories/agent-runs";
+import { upsertSource } from "@/src/db/repositories/sources";
 import type { RunTrigger } from "@/src/db/repositories/monitoring-runs";
 import { analyzeCompanyEvidence } from "@/src/ai/provider-adapter";
 import { ANALYST_PROMPT_VERSION } from "@/src/ai/prompts/v1/analyst";
@@ -21,6 +24,7 @@ import type { AnalystOutput } from "@/src/ai/prompts/v1/analyst";
 import {
   buildCompanySourcePlan,
   type SourceFamily,
+  type SourcePlanBudget,
 } from "@/src/research/sources/company-source-plan";
 import { fetchSource, type FetchedDocument } from "@/src/research/sources/fetcher";
 import { runVerticalSlice } from "@/src/research/pipeline/vertical-slice";
@@ -71,6 +75,12 @@ export interface ResearchCompanyOptions {
   trigger: RunTrigger;
   /** Defaults to one attempt per company per calendar day. */
   idempotencyKey?: string;
+  /**
+   * Tightens the source plan's budget below its defaults - for a caller like
+   * the chat tool, where a company's whole research pass has to fit inside
+   * one conversation turn rather than a background job.
+   */
+  budgetOverride?: Partial<SourcePlanBudget>;
   /** Injected in tests so no network call happens. */
   fetchImpl?: typeof fetch;
   /** Injected in tests so no provider call happens. */
@@ -129,7 +139,14 @@ interface FetchedCandidate {
  */
 async function fetchPlannedDocuments(
   candidates: { url: string; family: SourceFamily }[],
-  budget: { maxFetchedDocuments: number; maxAttempts: number; overallDeadlineMs: number },
+  budget: Pick<
+    SourcePlanBudget,
+    | "maxFetchedDocuments"
+    | "maxAttempts"
+    | "overallDeadlineMs"
+    | "perSourceTimeoutMs"
+    | "maxResponseBytes"
+  >,
   fetchImpl: typeof fetch | undefined,
   now: Date,
 ): Promise<{ fetched: FetchedCandidate[]; warnings: string[] }> {
@@ -148,7 +165,11 @@ async function fetchPlannedDocuments(
     }
 
     attempts += 1;
-    const outcome = await fetchSource(candidate.url, { fetchImpl });
+    const outcome = await fetchSource(candidate.url, {
+      fetchImpl,
+      timeoutMs: budget.perSourceTimeoutMs,
+      maxResponseBytes: budget.maxResponseBytes,
+    });
     if (outcome.ok) {
       fetched.push({ document: outcome.document, family: candidate.family });
     } else {
@@ -180,6 +201,7 @@ function buildExtractionPayload(
         sourceType: mapping.sourceType,
         trustTier: mapping.trustTier,
         publishedAt: document.publishedAt,
+        contentHash: document.contentHash,
       };
     },
   );
@@ -219,9 +241,15 @@ function buildExtractionPayload(
     }
   }
   const resolveClaimKeys = (indexes: number[]): string[] =>
-    indexes
-      .map((i) => claimKeyByAnalystIndex.get(i))
-      .filter((key): key is string => key !== undefined);
+    indexes.map((index) => {
+      const claimKey = claimKeyByAnalystIndex.get(index);
+      if (!claimKey) {
+        throw new Error(
+          `Analyst cited claim index ${index}, but that claim was not validly tied to a fetched document.`,
+        );
+      }
+      return claimKey;
+    });
 
   const dimensionEntries = Object.entries(analysis.dimensions) as [
     keyof AnalystOutput["dimensions"],
@@ -307,6 +335,51 @@ function buildExtractionPayload(
   };
 }
 
+/**
+ * A document remains valuable provenance even when consolidation fails or finds
+ * no claim. Persist it with an explicit run rather than reporting it as fetched
+ * while leaving no auditable trace in the database.
+ */
+async function persistFetchedSourceProvenance(
+  client: TypedSupabaseClient,
+  companyId: string,
+  fetched: FetchedCandidate[],
+): Promise<void> {
+  if (fetched.length === 0) return;
+
+  const agentRunId = await startAgentRun(client, {
+    purpose: "company_research_source_capture",
+    promptVersion: null,
+    modelName: null,
+  });
+  try {
+    for (const { document, family } of fetched) {
+      const mapping = FAMILY_SOURCE_TYPE[family];
+      await upsertSource(client, {
+        url: document.url,
+        urlNormalized: document.normalizedUrl,
+        title: document.title,
+        publisher: null,
+        sourceType: mapping.sourceType,
+        trustTier: mapping.trustTier,
+        publishedAt: document.publishedAt,
+        contentHash: document.contentHash,
+        researchCompanyId: companyId,
+        agentRunId,
+      });
+    }
+    await finishAgentRun(client, agentRunId, "success");
+  } catch (cause) {
+    await finishAgentRun(
+      client,
+      agentRunId,
+      "failed",
+      cause instanceof Error ? cause.name : "source_capture_failed",
+    );
+    throw cause;
+  }
+}
+
 export async function researchCompany(
   options: ResearchCompanyOptions,
 ): Promise<CompanyResearchReport> {
@@ -338,7 +411,7 @@ export async function researchCompany(
       reused: true,
       companySlug: identity.slug,
       status: existingRun.status,
-      sourcesPlanned: 0,
+      sourcesPlanned: existingRun.sourcesPlanned,
       sourcesFetched: existingRun.sourcesFetched,
       claimsWritten: existingRun.claimsWritten,
       scored: false,
@@ -354,6 +427,12 @@ export async function researchCompany(
   const warnings: string[] = [];
 
   try {
+    await applyRefreshSchedule(client, {
+      companyId: identity.id,
+      nextRefreshAt: now.toISOString(),
+      researchState: "running",
+    });
+
     if (identity.entityRole !== "operating_company" && identity.entityRole !== "unknown") {
       // Section 32's screen runs at discovery; this is the same rule applied
       // again at research time, in case a role changed - or was set - after
@@ -366,6 +445,12 @@ export async function researchCompany(
         warnings: [
           `Entity role is "${identity.entityRole}", not an operating company; research refused.`,
         ],
+      });
+      await applyRefreshSchedule(client, {
+        companyId: identity.id,
+        nextRefreshAt: now.toISOString(),
+        researchState: "blocked",
+        lastResearchedAt: now.toISOString(),
       });
       return {
         runId,
@@ -385,10 +470,17 @@ export async function researchCompany(
     }
 
     const context = await getCompanyResearchContext(client, identity.id);
+    const tierState = await getCompanyTierState(client, identity.id);
+    const hasUnreflectedMaterialEvent =
+      tierState.lastMaterialChangeAt !== null &&
+      (tierState.lastResearchedAt === null ||
+        new Date(tierState.lastMaterialChangeAt).getTime() >
+          new Date(tierState.lastResearchedAt).getTime());
     const plan = buildCompanySourcePlan({
       primaryDomain: identity.primaryDomain,
       searchLeads: context.searchLeads,
       existingEvidenceUrls: context.existingEvidenceUrls,
+      budget: options.budgetOverride,
     });
     warnings.push(...plan.warnings);
 
@@ -399,6 +491,50 @@ export async function researchCompany(
       now,
     );
     warnings.push(...fetchWarnings);
+
+    const fetchedHashes = new Set(fetched.map(({ document }) => document.contentHash));
+    const unchangedEvidence =
+      fetchedHashes.size > 0 &&
+      [...fetchedHashes].every((hash) => context.existingEvidenceContentHashes.includes(hash)) &&
+      !hasUnreflectedMaterialEvent;
+
+    if (unchangedEvidence) {
+      const currentTier = await getCompanyTierState(client, identity.id);
+      const refresh = computeNextRefresh({
+        tier: currentTier.researchTier,
+        now,
+        hasUnreflectedMaterialEvent,
+        lastResearchOutcome: "complete",
+      });
+      const unchangedWarning =
+        "Fetched evidence content is unchanged; no claims, assessment, or score were duplicated.";
+      await finishCompanyResearchRun(client, runId, {
+        status: "success",
+        sourcesPlanned: plan.candidates.length,
+        sourcesFetched: fetched.length,
+        claimsWritten: 0,
+        warnings: [...warnings, unchangedWarning],
+      });
+      await applyRefreshSchedule(client, {
+        companyId: identity.id,
+        nextRefreshAt: refresh.nextRefreshAt.toISOString(),
+        researchState: "complete",
+        lastResearchedAt: now.toISOString(),
+      });
+      return {
+        runId,
+        reused: false,
+        companySlug: identity.slug,
+        status: "success",
+        sourcesPlanned: plan.candidates.length,
+        sourcesFetched: fetched.length,
+        claimsWritten: 0,
+        scored: false,
+        tier: currentTier.researchTier,
+        nextRefreshAt: refresh.nextRefreshAt.toISOString(),
+        warnings: [...warnings, unchangedWarning],
+      };
+    }
 
     if (fetched.length === 0) {
       await finishCompanyResearchRun(client, runId, {
@@ -413,7 +549,7 @@ export async function researchCompany(
         entityResolved: identity.legalEntityName !== null,
         hasEvidence: context.existingEvidenceUrls.length > 0,
         recommendation: null,
-        hasUnreflectedMaterialEvent: false,
+        hasUnreflectedMaterialEvent,
       });
       await applyTierDecision(client, {
         companyId: identity.id,
@@ -424,7 +560,7 @@ export async function researchCompany(
       const refresh = computeNextRefresh({
         tier: decision.tier,
         now,
-        hasUnreflectedMaterialEvent: false,
+        hasUnreflectedMaterialEvent,
         lastResearchOutcome: "partial",
       });
       await applyRefreshSchedule(client, {
@@ -486,11 +622,26 @@ export async function researchCompany(
     if (payload.claims.length === 0) {
       warnings.push("The analyst produced no claims from the fetched documents.");
       hasMeaningfulGap = true;
+      await persistFetchedSourceProvenance(client, identity.id, fetched);
     } else {
-      const summary = await runVerticalSlice(client, payload);
+      const entityResolved = analysis.output.entityResolution.matchesRecordedIdentity;
+      const summary = await runVerticalSlice(client, payload, {
+        allowScore: entityResolved,
+        agentRun: {
+          purpose: "company_research_consolidation",
+          promptVersion: analysis.promptVersion,
+          modelName: analysis.model,
+          isStub: false,
+        },
+      });
       claimsWritten = summary.claimsWritten;
-      scored = summary.result.normalizedScore !== null;
+      scored = entityResolved && summary.scoreId !== null;
       recommendation = summary.result.recommendation;
+      if (!entityResolved) {
+        warnings.push(
+          "Legal/acquirable entity remains unresolved; evidence was stored but no score row was written.",
+        );
+      }
     }
 
     const runStatus: CompanyResearchRunStatus =
@@ -509,7 +660,7 @@ export async function researchCompany(
       entityResolved: analysis.output.entityResolution.matchesRecordedIdentity,
       hasEvidence: claimsWritten > 0,
       recommendation,
-      hasUnreflectedMaterialEvent: false,
+      hasUnreflectedMaterialEvent,
     });
     await applyTierDecision(client, {
       companyId: identity.id,

@@ -50,14 +50,31 @@ export interface VerticalSliceSummary {
   metricsWritten: number;
   fundamentalAnalysisId: string;
   assessmentId: string;
-  scoreId: string;
+  /** Null when entity identity blocks decision scoring. Evidence still persists. */
+  scoreId: string | null;
   scoreCreated: boolean;
   result: ScoringResult;
+}
+
+export interface RunVerticalSliceOptions {
+  /**
+   * Entity resolution happens before scoring. False persists useful evidence
+   * and the evidence-backed assessment, but deliberately writes no score row.
+   */
+  allowScore?: boolean;
+  /** Provenance of the producer of this payload, never inferred from the row. */
+  agentRun?: {
+    purpose: string;
+    promptVersion: string | null;
+    modelName: string | null;
+    isStub: boolean;
+  };
 }
 
 export async function runVerticalSlice(
   client: TypedSupabaseClient,
   rawPayload: ExtractionPayload,
+  options: RunVerticalSliceOptions = {},
 ): Promise<VerticalSliceSummary> {
   const parsed = extractionPayloadSchema.safeParse(rawPayload);
   if (!parsed.success) {
@@ -85,8 +102,9 @@ export async function runVerticalSlice(
   }
   const companyId = company.data.id;
 
-  // The scorecard is chosen by the assessed path. A Hybrid would need two
-  // Pure, and first: a payload that cannot be scored writes nothing at all.
+  // Pure and first: the Analyst supplies inputs, TypeScript derives every
+  // numeric output. `allowScore` controls only persistence after the entity
+  // gate, not whether an LLM gets to calculate the value.
   const result = scoreTarget({
     config: THESIS_MODEL_V0_3,
     policy: SCORING_POLICY_V0_3,
@@ -95,13 +113,11 @@ export async function runVerticalSlice(
 
   const agentRunId = await startAgentRun(client, {
     purpose:
-      payload.provenance === "stub"
-        ? "milestone_2_vertical_slice_stub"
-        : "milestone_2_vertical_slice",
-    promptVersion: null,
-    // No LLM in this milestone. Recorded as null rather than invented.
-    modelName: null,
-    isStub: payload.provenance === "stub",
+      options.agentRun?.purpose ??
+      (payload.provenance === "stub" ? "vertical_slice_stub" : "company_research_consolidation"),
+    promptVersion: options.agentRun?.promptVersion ?? null,
+    modelName: options.agentRun?.modelName ?? null,
+    isStub: options.agentRun?.isStub ?? payload.provenance === "stub",
   });
 
   try {
@@ -115,6 +131,11 @@ export async function runVerticalSlice(
         sourceType: source.sourceType,
         trustTier: source.trustTier,
         publishedAt: source.publishedAt,
+        contentHash: source.contentHash ?? null,
+        // Every source in an ExtractionPayload was gathered for this one
+        // company, so its content hash de-duplicates within this company
+        // rather than against an unrelated company's identical boilerplate.
+        researchCompanyId: companyId,
         agentRunId,
       });
       sourceIdByKey.set(source.key, sourceId);
@@ -224,19 +245,25 @@ export async function runVerticalSlice(
       })),
     });
 
-    const scoringModelId = await ensureScoringModel(client, {
-      config: THESIS_MODEL_V0_3,
-      policy: SCORING_POLICY_V0_3,
-      governance: SCORING_MODEL_GOVERNANCE,
-    });
+    let scoreId: string | null = null;
+    let created = false;
+    if (options.allowScore ?? true) {
+      const scoringModelId = await ensureScoringModel(client, {
+        config: THESIS_MODEL_V0_3,
+        policy: SCORING_POLICY_V0_3,
+        governance: SCORING_MODEL_GOVERNANCE,
+      });
 
-    const { scoreId, created } = await insertScore(client, {
-      companyId,
-      scoringModelId,
-      input: payload.scoring,
-      result,
-      agentRunId,
-    });
+      const insertedScore = await insertScore(client, {
+        companyId,
+        scoringModelId,
+        input: payload.scoring,
+        result,
+        agentRunId,
+      });
+      scoreId = insertedScore.scoreId;
+      created = insertedScore.created;
+    }
 
     await finishAgentRun(client, agentRunId, "success");
 

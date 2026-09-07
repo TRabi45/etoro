@@ -15,13 +15,11 @@ import { scoringInputSchema } from "@/src/domain/scoring/types";
 /**
  * The extraction payload contract.
  *
- * This is the shape the pipeline accepts, whatever produced it. In this
- * milestone it is satisfied by a hand-written stub; from Milestone 3 it will be
- * satisfied by the Claude provider adapter. Defining it now, and validating
- * every payload against it before a single row is written, is what stops
- * malformed model output from reaching the database later - the LLM will have to
- * meet a contract that already exists rather than one written around whatever it
- * happens to emit.
+ * This is the shape the pipeline accepts, whatever produced it. Both the
+ * deliberately labelled stub and the live Analyst satisfy it. Defining it
+ * before a single row is written is what stops malformed model output from
+ * reaching the database later - the LLM has to meet a contract rather than one
+ * written around whatever it happens to emit.
  *
  * Sources and claims are addressed by caller-chosen string keys rather than
  * database ids, because an extractor has no way to know the ids. The pipeline
@@ -40,6 +38,8 @@ export const payloadSourceSchema = z.object({
   sourceType: z.enum(SOURCE_TYPES),
   trustTier: z.enum(SOURCE_TRUST_TIERS),
   publishedAt: isoDateSchema.nullable(),
+  /** Hash of retrieved content, when this source came through the live fetcher. */
+  contentHash: z.string().min(1).nullable().optional(),
 });
 
 export const payloadClaimSourceSchema = z.object({

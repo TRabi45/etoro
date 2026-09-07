@@ -60,19 +60,38 @@ export async function startCompanyResearchRun(
     );
   }
 
-  const existing = await client
+  const sameKey = await client
     .from("company_research_runs")
     .select("id")
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
 
-  if (existing.error || !existing.data) {
+  if (sameKey.error) {
     throw new RepositoryWriteError(
-      `could not read the existing company research run: ${existing.error?.message ?? "no row"}`,
+      `could not read the existing company research run: ${sameKey.error.message}`,
+    );
+  }
+  if (sameKey.data) {
+    return { runId: sameKey.data.id, reused: true };
+  }
+
+  // The partial unique index on a running company can reject a *different*
+  // idempotency key. That is the desired ownership guarantee: join the active
+  // work instead of starting a competing run that would race to replace the
+  // company's assessment and schedule.
+  const active = await client
+    .from("company_research_runs")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("status", "running")
+    .maybeSingle();
+  if (active.error || !active.data) {
+    throw new RepositoryWriteError(
+      `could not find the active company research owner: ${active.error?.message ?? "no row"}`,
     );
   }
 
-  return { runId: existing.data.id, reused: true };
+  return { runId: active.data.id, reused: true };
 }
 
 export interface FinishCompanyResearchRunArgs {

@@ -91,7 +91,10 @@ export async function applyTierDecision(
       research_tier: input.decision.tier,
       research_tier_reason: input.decision.reason,
       research_tier_confidence: input.confidence,
-      tier_changed_by_run_id: input.researchRunId,
+      // "changed by" is historical provenance. Refreshing an explanation for
+      // an unchanged tier must not rewrite the identity of the run that made
+      // the actual transition.
+      ...(changed ? { tier_changed_by_run_id: input.researchRunId } : {}),
     })
     .eq("id", input.companyId);
 
@@ -152,6 +155,31 @@ export async function applyRefreshSchedule(
   if (error) {
     throw new RepositoryWriteError(
       `could not update refresh schedule for company ${input.companyId}: ${error.message}`,
+    );
+  }
+}
+
+/**
+ * A newly stored medium/high material event invalidates a previous research
+ * schedule immediately. The event remains append-only; this is only the
+ * company's current allocation pointer used by the selector.
+ */
+export async function markCompanyMaterialChange(
+  client: TypedSupabaseClient,
+  companyId: string,
+  occurredAt: string = new Date().toISOString(),
+): Promise<void> {
+  const { error } = await client
+    .from("companies")
+    .update({
+      last_material_change_at: occurredAt,
+      next_refresh_at: occurredAt,
+    })
+    .eq("id", companyId);
+
+  if (error) {
+    throw new RepositoryWriteError(
+      `could not mark material change for company ${companyId}: ${error.message}`,
     );
   }
 }

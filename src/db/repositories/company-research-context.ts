@@ -50,17 +50,23 @@ export interface CompanySearchLeadRow {
 }
 
 /**
- * URLs already linked to a stored claim for this company, and the search
- * leads recorded for it. Event-linked sources are not included yet - a
- * reasonable first cut, since claims are where the bulk of cited evidence
- * lives - and can be added without changing this function's shape.
+ * URLs/content hashes already linked to a stored claim for this company, and
+ * the search leads recorded for it. Content hashes make a fresh retrieval of
+ * the same evidence an auditable no-op rather than a duplicate assessment.
  */
 export async function getCompanyResearchContext(
   client: TypedSupabaseClient,
   companyId: string,
-): Promise<{ existingEvidenceUrls: string[]; searchLeads: CompanySearchLeadRow[] }> {
+): Promise<{
+  existingEvidenceUrls: string[];
+  existingEvidenceContentHashes: string[];
+  searchLeads: CompanySearchLeadRow[];
+}> {
   const [claimSources, searchLeads] = await Promise.all([
-    client.from("claims").select("claim_sources(sources(url))").eq("company_id", companyId),
+    client
+      .from("claims")
+      .select("claim_sources(sources(url, content_hash))")
+      .eq("company_id", companyId),
     client.from("company_search_leads").select("label, query").eq("company_id", companyId),
   ]);
 
@@ -76,17 +82,23 @@ export async function getCompanyResearchContext(
   }
 
   const urls = new Set<string>();
+  const contentHashes = new Set<string>();
   for (const claim of claimSources.data ?? []) {
     for (const link of claim.claim_sources ?? []) {
       const url = link.sources?.url;
       if (url) {
         urls.add(url);
       }
+      const hash = link.sources?.content_hash;
+      if (hash) {
+        contentHashes.add(hash);
+      }
     }
   }
 
   return {
     existingEvidenceUrls: [...urls],
+    existingEvidenceContentHashes: [...contentHashes],
     searchLeads: (searchLeads.data ?? []).map((row) => ({ label: row.label, query: row.query })),
   };
 }

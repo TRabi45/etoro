@@ -5,10 +5,9 @@ import type { EventCategory, EventType, MaterialityLevel } from "@/src/config/ta
 /**
  * Material events.
  *
- * Backs the "what changed?" question. The events table is populated by the
- * monitoring pipeline, which does not exist until Milestone 4, so this
- * repository will legitimately return an empty list for now - and the agent is
- * expected to say so plainly rather than reach for anything else.
+ * Backs the "what changed?" question. The monitoring pipeline writes events,
+ * but an empty result still means only that nothing has been recorded in the
+ * requested window - never that nothing happened in the world.
  */
 
 export interface EventSummary {
