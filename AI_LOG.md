@@ -744,6 +744,36 @@ The repository-wide `format:check` remains red on 98 pre-existing files, none in
 
 ---
 
+## Milestone 18 — Production Data Integrity: Stub Isolation
+
+### What was contaminated and how it was found
+
+The existing local database held the six intended bootstrap identities, plus a synthetic vertical-slice research packet for getquin. Its score was 81.18 even though the company research state was still pending and `last_researched_at` was null. The score, assessment, claims, metrics, fundamentals and sources all traced to an `agent_runs` row with `is_stub = true`, but Targets, Briefing, Company Profile and the conversational tools treated those rows exactly like production intelligence.
+
+The root cause was the shared public-read boundary: the original RLS sweep granted anon and authenticated readers `using (true)` on every dashboard table. `is_stub` existed as structured provenance, but it was only used to label a rendered assessment. Every normal repository correctly used the public client, yet the public client was allowed to read synthetic artifacts. That made the contamination systemic rather than a getquin-page defect.
+
+### Boundary and behavior change
+
+A forward migration now enforces production semantics in RLS. Anon and authenticated clients can read analytical artifacts only when their `agent_run_id` resolves to a non-stub run; missing provenance also fails closed. The rule covers sources, claims, metrics, fundamental analyses, licences, funding rounds, people, events, deals and their status history, assessments, scores, the evidence-link tables, and agent-run metadata. Bootstrap companies remain visible because identity rows with no agent run are allowed, while agent-created identities, aliases, domains, search leads and watchlist rows cannot reveal a synthetic-only company.
+
+The service role intentionally still bypasses RLS, which is the explicit test/demo access path already established by the repository. One service-role production reader needed an additional guard: the company-research planner now ignores stub claims when building its set of already-covered evidence URLs and hashes. Otherwise a real pass could skip retrieval because a synthetic fixture had used the same source. Source de-duplication also promotes a stub/unknown source to non-stub provenance only after a real run retrieves the same URL or body; a stub run can never replace a real source. That prevents a real claim from losing its citation behind the public source policy. No data was deleted, no component-level `is_stub` checks were scattered across the UI, and scoring logic was unchanged. Deleting the local stub was rejected because it would hide the integrity flaw rather than fix existing databases; per-component filters were rejected because a new reader could omit them.
+
+The protected normal paths are Targets and search/filter ranking, Top Opportunities and Briefing attention items, Company Profile and score history, comparisons, Market Map aggregates, Monitoring and Competitors event/deal views, the dashboard command search, and conversational Agent tools. A company with only stub intelligence is now an unscored, unresearched identity rather than a zero-score company. README was minimally synchronized to say that the stored payload is available for explicit slice tests but excluded from production-facing reads.
+
+### Regression coverage and local smoke test
+
+A live-database integration suite creates paired synthetic and real runs and proves the requested cases: a stub score cannot enter normal ranking; a real score still appears; a bootstrap identity backed only by stub analysis is unresearched; stub data cannot become a Briefing opportunity or attention item; Agent-facing search and score tools do not expose it; and the service role can still inspect it deliberately. The same suite proves that a real research pass sees real existing evidence but not stub evidence, and that a real retrieval safely promotes a de-duplicated stub source. Existing Agent integration expectations were corrected so getquin's synthetic fundamentals, recommendation and 81.18 score can no longer serve as production test fixtures, including in comparisons.
+
+The migration was applied forward, without a reset, to the existing local database. A manual smoke test against the running application returned HTTP 200 for Targets, Briefing and getquin's profile. Targets still contained getquin but rendered it as `Not scored` and contained no `81.18`; Briefing contained no `81.18` and showed `No company has been scored yet`; the profile contained no `81.18`, showed `No analysis has been written`, and did not render the synthetic-payload notice. A service-role read still found the stored 81.18 row with `is_stub = true`, confirming isolation rather than deletion. The local Agent score executor returned no score for getquin. An end-to-end Anthropic answer was attempted, but the sandboxed `tsx` process failed while reading system user information; the requested elevated retry was not authorized because it would send database-derived context to an external API, so no live model response is claimed.
+
+### Verification
+
+The first post-migration run of the old Agent integration file produced four expected failures where tests still asserted the synthetic getquin profile, fundamentals, score and first-place ranking. Those assertions were replaced with production-safe expectations. Two early runs of the new fixture also exposed incorrect enum literals (`succeeded` and `fact`); the fixture was corrected to the schema's `success` and `company_reported` values. The final focused source/invariant run passed 15/15 tests. The complete integration suite passed 54/54 tests across six files, including the new eight-test isolation file.
+
+Final gates: `npm.cmd run lint` passed; `npm.cmd run typecheck` passed after correcting one nullable active-model fixture type; `npm.cmd test` passed 266/266 tests across 27 files; and `npm.cmd run build` compiled, typechecked and generated all 11 routes successfully. Scoped Prettier checks passed for every changed TypeScript/Markdown file, and `git diff --check` passed apart from Git's informational LF-to-CRLF warnings. The previously documented repository-wide Prettier backlog was kept separate and was not mass-reformatted or recharacterized by this milestone.
+
+---
+
 ## Next Milestones to Document
 
 The next AI log entries will be added only when one of these meaningful milestones is reached:

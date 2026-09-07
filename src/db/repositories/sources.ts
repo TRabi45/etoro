@@ -45,10 +45,60 @@ export async function upsertSource(
   client: TypedSupabaseClient,
   input: UpsertSourceInput,
 ): Promise<string> {
+  async function reuseExisting(existing: {
+    id: string;
+    agent_runs: { is_stub: boolean } | null;
+  }): Promise<string> {
+    if (existing.agent_runs?.is_stub === false) {
+      return existing.id;
+    }
+
+    const incomingRun = await client
+      .from("agent_runs")
+      .select("is_stub")
+      .eq("id", input.agentRunId)
+      .single();
+    if (incomingRun.error || !incomingRun.data) {
+      throw new RepositoryWriteError(
+        `could not verify source run provenance: ${incomingRun.error?.message ?? "no row returned"}`,
+      );
+    }
+    if (incomingRun.data.is_stub) {
+      return existing.id;
+    }
+
+    // URL/content de-duplication can find a source that was first introduced
+    // by a synthetic fixture. A real retrieval establishes the source for
+    // production use, so refresh its metadata and provenance in place. Stub
+    // runs never take the reverse path and can never replace a real source.
+    const promoted = await client
+      .from("sources")
+      .update({
+        url: input.url,
+        url_normalized: input.urlNormalized,
+        title: input.title,
+        publisher: input.publisher,
+        source_type: input.sourceType,
+        trust_tier: input.trustTier,
+        published_at: input.publishedAt,
+        accessed_at: new Date().toISOString(),
+        content_hash: input.contentHash ?? null,
+        research_company_id: input.researchCompanyId ?? null,
+        agent_run_id: input.agentRunId,
+      })
+      .eq("id", existing.id);
+    if (promoted.error) {
+      throw new RepositoryWriteError(
+        `could not promote source ${input.urlNormalized}: ${promoted.error.message}`,
+      );
+    }
+    return existing.id;
+  }
+
   if (input.contentHash && input.researchCompanyId) {
     const byContent = await client
       .from("sources")
-      .select("id")
+      .select("id, agent_runs(is_stub)")
       .eq("content_hash", input.contentHash)
       .eq("research_company_id", input.researchCompanyId)
       .maybeSingle();
@@ -59,13 +109,13 @@ export async function upsertSource(
       );
     }
     if (byContent.data) {
-      return byContent.data.id;
+      return reuseExisting(byContent.data);
     }
   }
 
   const existing = await client
     .from("sources")
-    .select("id")
+    .select("id, agent_runs(is_stub)")
     .eq("url_normalized", input.urlNormalized)
     .maybeSingle();
 
@@ -73,7 +123,7 @@ export async function upsertSource(
     throw new RepositoryWriteError(`could not read source: ${existing.error.message}`);
   }
   if (existing.data) {
-    return existing.data.id;
+    return reuseExisting(existing.data);
   }
 
   const { data, error } = await client

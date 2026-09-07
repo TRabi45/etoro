@@ -81,7 +81,7 @@ multi-agent orchestration, no vector database.
 | Pipeline               | `src/research/pipeline/`         | The monitoring loop and `researchCompany`, the one orchestrator every trigger shares.                                      |
 | Tiering policy         | `src/domain/tiering/`            | Deterministic research-tier and next-refresh decisions over validated facts.                                               |
 | Bootstrap data         | `data/seed/`                     | Six company identities. Identity, aliases, domain, theme and search leads only.                                            |
-| Stub payload           | `data/stub/`                     | Synthetic stand-in kept only for `getquin`'s original slice. Labelled as stub wherever it renders.                         |
+| Stub payload           | `data/stub/`                     | Synthetic stand-in kept for explicit slice tests; production-facing readers exclude its artifacts by default.              |
 | AI layer               | `src/ai/`                        | Provider adapter, versioned prompts, and the typed tools the agent may call.                                               |
 | Server utilities       | `src/server/`                    | Transport concerns that are not repositories - endpoint rate limiting and operator authorization.                          |
 | Migrations             | `supabase/migrations/`           | Committed, idempotent forward migrations.                                                                                  |
@@ -403,11 +403,10 @@ Acquire while _any_ hard gate is unresolved, not only a critical one.
   75% coverage off one document, and its own counter-thesis says the evidence is
   too thin to act on. That is the system working: it reports what it could
   establish and refuses to dress it up.
-- **`getquin`'s profile is still the synthetic stub payload** from
-  `pnpm slice:run`, with `example.com` sources and a provenance notice on the
-  page. Its evidence structure, citations and score are real; its underlying
-  facts are invented. Real pipeline research is never labelled as stub, and the
-  stub is never shown as live.
+- **`getquin` still has a synthetic stub payload in local storage** from
+  `pnpm slice:run`, with `example.com` sources. Production-facing readers hide
+  every artifact from that run, so getquin remains a visible bootstrap identity
+  but appears unresearched until a real pipeline pass produces evidence.
 - **A run that reports `partial_success` is the normal case.** Paywalls, blocked
   crawlers, guessed paths that 404 and extraction timeouts are ordinary
   conditions on the open web. The status means "something was missed and here is

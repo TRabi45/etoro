@@ -65,7 +65,7 @@ export async function getCompanyResearchContext(
   const [claimSources, searchLeads] = await Promise.all([
     client
       .from("claims")
-      .select("claim_sources(sources(url, content_hash))")
+      .select("agent_runs(is_stub), claim_sources(sources(url, content_hash))")
       .eq("company_id", companyId),
     client.from("company_search_leads").select("label, query").eq("company_id", companyId),
   ]);
@@ -84,6 +84,13 @@ export async function getCompanyResearchContext(
   const urls = new Set<string>();
   const contentHashes = new Set<string>();
   for (const claim of claimSources.data ?? []) {
+    // This repository runs with the service role, which deliberately bypasses
+    // the production-facing RLS boundary. Synthetic evidence must not teach a
+    // real research pass that a URL is already covered: the pass needs to
+    // retrieve and establish that evidence for itself.
+    if (claim.agent_runs?.is_stub !== false) {
+      continue;
+    }
     for (const link of claim.claim_sources ?? []) {
       const url = link.sources?.url;
       if (url) {

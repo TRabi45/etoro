@@ -93,17 +93,17 @@ beforeAll(async () => {
 });
 
 describe("company tools", () => {
-  it("returns a researched profile with an evidence packet and citations", async () => {
+  it("treats a profile backed only by stub intelligence as unresearched", async () => {
     const result = await executeGetCompanyProfile({ slug: "getquin" });
 
     expect(result.ok).toBe(true);
     expect(result.data).not.toBeNull();
-    expect(result.citations.length).toBeGreaterThan(0);
-    // Every citation the model may quote must carry a real, resolvable source.
-    for (const citation of result.citations) {
-      expect(citation.url).toMatch(/^https?:\/\//);
-      expect(citation.index).toBeGreaterThan(0);
-    }
+    expect(result.data).toMatchObject({ hasResearch: false });
+    expect(result.data).not.toHaveProperty("score");
+    expect(result.data).not.toHaveProperty("assessment");
+    expect(JSON.stringify(result.data)).not.toContain("81.18");
+    expect(result.citations).toEqual([]);
+    expect(result.warnings.join(" ")).toMatch(/has not been researched/i);
   });
 
   it("reports an unresearched company without internal implementation language", async () => {
@@ -135,51 +135,18 @@ describe("company tools", () => {
     expect(result.warnings.join(" ")).toMatch(/no monitored company was found/i);
   });
 
-  it("returns fundamentals with unknown measures intact", async () => {
+  it("does not expose stub fundamentals", async () => {
     const result = await executeGetCompanyFundamentals({ slug: "getquin" });
     expect(result.ok).toBe(true);
-
-    const payload = result.data as {
-      observations: { valueStatus: string; valueNumeric: number | null }[];
-    };
-    const unknowns = payload.observations.filter(
-      (observation) => observation.valueStatus === "unknown",
-    );
-    expect(unknowns.length).toBeGreaterThan(0);
-    // The single most important property: an unknown never arrives as a zero.
-    for (const observation of unknowns) {
-      expect(observation.valueNumeric).toBeNull();
-    }
+    expect(result.data).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/financial or commercial evidence.*unknown/i);
   });
 
-  it("returns the deterministic score breakdown with its blockers", async () => {
+  it("does not expose a stub score or recommendation", async () => {
     const result = await executeExplainScore({ slug: "getquin" });
     expect(result.ok).toBe(true);
-
-    const payload = result.data as {
-      calculation: {
-        normalizedScore: number;
-        coverage: number;
-        lowerBound: number;
-        upperBound: number;
-      };
-      recommendation: string;
-      routes: { best: string; secondBest: string; buyBeatsAlternatives: boolean };
-      gates: { key: string; state: string }[];
-    };
-
-    // The three numbers section 26 requires the agent to report together.
-    expect(payload.calculation.normalizedScore).toBe(81.18);
-    expect(payload.calculation.coverage).toBe(0.85);
-    expect(payload.calculation.lowerBound).toBe(69);
-    expect(payload.calculation.upperBound).toBe(84);
-
-    // A strong score that is still not an acquisition, because partnership
-    // outscores control on the recorded route assessment.
-    expect(payload.recommendation).toBe("partner");
-    expect(payload.routes.best).toBe("partner");
-    expect(payload.routes.buyBeatsAlternatives).toBe(false);
-    expect(payload.gates.find((gate) => gate.key === "regulatory")?.state).toBe("unresolved");
+    expect(result.data).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/no score has been calculated/i);
   });
 
   it("refuses a comparison when fewer than two companies exist", async () => {
@@ -190,7 +157,7 @@ describe("company tools", () => {
     expect(result.warnings.join(" ")).toMatch(/at least two/i);
   });
 
-  it("aligns a real comparison and flags the unassessed side", async () => {
+  it("aligns two unresearched companies without reviving a stub score", async () => {
     const result = await executeCompareCompanies({ slugs: ["getquin", "dfns"] });
     expect(result.ok).toBe(true);
 
@@ -198,8 +165,10 @@ describe("company tools", () => {
       companies: { slug: string; normalizedScore: number | null }[];
     };
     expect(payload.companies).toHaveLength(2);
-    // Dfns has no assessment; its blank score must read as "not researched".
+    // Dfns has no assessment, while getquin has only a synthetic one. Both
+    // must read as unresearched through the production-facing tool.
     expect(result.warnings.join(" ")).toMatch(/no assessment exists/i);
+    expect(payload.companies.find((row) => row.slug === "getquin")?.normalizedScore).toBeNull();
     expect(payload.companies.find((row) => row.slug === "dfns")?.normalizedScore).toBeNull();
   });
 });
@@ -215,7 +184,7 @@ describe("discovery tools", () => {
     expect(result.warnings.join(" ")).toMatch(/geography is not yet recorded/i);
   });
 
-  it("ranks the universe with the scored company first", async () => {
+  it("keeps the stub-only company in the universe without ranking its score", async () => {
     const result = await executeSearchTargets({ limit: 10 });
     expect(result.ok).toBe(true);
 
@@ -225,8 +194,9 @@ describe("discovery tools", () => {
     // to a moment in the data's life rather than to the behaviour it exists to
     // protect - which is the ordering.
     expect(payload.matches.length).toBeGreaterThanOrEqual(6);
-    // The scored company ranks first; unscored ones follow rather than vanish.
-    expect(payload.matches[0].slug).toBe("getquin");
+    // The identity remains searchable, but its synthetic 81.18 score cannot
+    // move it above any production-scored company.
+    expect(payload.matches.find((match) => match.slug === "getquin")?.normalizedScore).toBeNull();
     expect(
       payload.matches.filter((match) => match.normalizedScore === null).length,
     ).toBeGreaterThan(0);
